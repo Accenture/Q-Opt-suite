@@ -7,12 +7,12 @@ import logging
 import os
 import tempfile
 from typing import Any, Union, cast
-import numpy as np
-from qiskit_optimization import QuadraticProgram # type: ignore
-import scipy.sparse as ss # type: ignore
-import scipy.io as sio  # type: ignore
 import urllib.request as ur
 import urllib.parse as up
+import numpy as np
+from qiskit_optimization import QuadraticProgram  # type: ignore
+import scipy.sparse as ss  # type: ignore
+import scipy.io as sio  # type: ignore
 import h5py  # type: ignore
 
 from models.model import ModelStep
@@ -59,7 +59,7 @@ class ToshibaBraketSQBM(AWSBraket):
         )
         if resp.status != 200:
             raise RuntimeError(f"Toshiba http response {resp.status} ({resp.reason})")
-        logging.info(f"{self} version {json.loads(resp.read().decode())['version']}")
+        logging.info("%s version %s", self, json.loads(resp.read().decode())["version"])
 
     def _solver_type(self) -> str:
         """
@@ -73,9 +73,9 @@ class ToshibaBraketSQBM(AWSBraket):
 
         :returns the interaction matrix
         """
-        cb = ToQuboNumpyCallback()
-        self.construct_qubo(step, cb)
-        return cb.interactions
+        callback = ToQuboNumpyCallback()
+        self.construct_qubo(step, callback)
+        return callback.interactions
 
     def num_variables(self, problem: Any) -> int:
         """
@@ -84,16 +84,16 @@ class ToshibaBraketSQBM(AWSBraket):
         interactions = cast(np.ndarray, problem)
         return len(interactions)
 
-    def solve(
-        self, problem: Any, timeout: int, num_solutions_desired: int
-    ) -> dict:
+    def solve(self, problem: Any, timeout: int, num_solutions_desired: int) -> dict:
         interactions = cast(np.ndarray, problem)
 
         def is_sparse():
             # Determine if the interaction matrix is sparse enough
             nonzero_interactions = np.count_nonzero(interactions)
             logging.debug(
-                f"problem has {nonzero_interactions}/{interactions.size} nonzero interactions"
+                "problem has %d/%d nonzero interactions",
+                nonzero_interactions,
+                interactions.size,
             )
             return nonzero_interactions / interactions.size < 0.3
 
@@ -123,7 +123,7 @@ class ToshibaBraketSQBM(AWSBraket):
                     "format"
                 ] = "dense"
 
-        def submit_problem(f):
+        def submit_problem(file):
             # Submit the problem to the Toshiba server, streaming in from file
             parameters = (
                 {k: v for k, v in self._solver_config.items() if k != "type"}
@@ -138,19 +138,23 @@ class ToshibaBraketSQBM(AWSBraket):
 
             headers = self._authorisation | {"Content-Type": "application/octet-stream"}
             if not self._chunked:
-                f.seek(0, os.SEEK_END)
-                headers |= {"Content-Length": f.tell()}
-                f.seek(0, os.SEEK_SET)
+                file.seek(0, os.SEEK_END)
+                headers |= {"Content-Length": file.tell()}
+                file.seek(0, os.SEEK_SET)
 
-            logging.debug(f"submitting problem to {uri} ({headers})")
-            resp = ur.urlopen(ur.Request(url=uri, headers=headers, data=f))
+            logging.debug("submitting problem to %s (%s)", uri, headers)
+            resp = ur.urlopen(ur.Request(url=uri, headers=headers, data=file))
 
             content = resp.read()
             if content:
                 response = json.loads(content)
                 logging.debug(
-                    f"job id={response['id']} time={response['time']} wait={response['wait']} "
-                    f"runs={response['runs']} message={response['message']}"
+                    "job id=%s time=%s wait=%s runs=%s message=%s",
+                    response["id"],
+                    response["time"],
+                    response["wait"],
+                    response["runs"],
+                    response["message"],
                 )
 
             if resp.status != 200:
@@ -164,21 +168,21 @@ class ToshibaBraketSQBM(AWSBraket):
             try:
                 fname = None
                 # Send the request in HF5 format
-                with tempfile.NamedTemporaryFile(delete=False) as fw:
-                    fname = fw.name
-                    hf_write_problem(h5py.File(fw, "w").create_group("/qubo"))
-                with open(fname, "rb") as fr:
-                    return submit_problem(fr)
+                with tempfile.NamedTemporaryFile(delete=False) as file_write:
+                    fname = file_write.name
+                    hf_write_problem(h5py.File(file_write, "w").create_group("/qubo"))
+                with open(fname, "rb") as file_read:
+                    return submit_problem(file_read)
             finally:
                 if fname:
                     os.remove(fname)
         else:
-            with tempfile.TemporaryFile() as f:
+            with tempfile.TemporaryFile() as file_temp:
                 # Send the request in MatrixMarket format
                 if is_sparse():
                     interactions = ss.coo_array(interactions)
-                sio.mmwrite(f, interactions, field="real", symmetry="symmetric")
-                return submit_problem(f)
+                sio.mmwrite(file_temp, interactions, field="real", symmetry="symmetric")
+                return submit_problem(file_temp)
 
     def get_info(self, result: Any) -> str:
         """

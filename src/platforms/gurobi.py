@@ -13,6 +13,9 @@ from models.model import ModelStep
 
 from platforms.platform import Platform
 
+# pylint: disable=E1101
+# See https://haominnn.medium.com/3aefa8ffae11
+
 
 def _map_vartype(vartype: qv.VarType) -> gp.GRB:
     """
@@ -55,84 +58,98 @@ def _set_variables(problem: gp.Model, program: QuadraticProgram) -> None:
     :param problem: the Gurobi `Model`
     :param program: the Qiskit `QuadraticProgram`
     """
-    for v in program.variables:
+    for variable in program.variables:
         problem.addVar(
-            lb=v.lowerbound,
-            ub=float("inf") if v.upperbound is None else v.upperbound,
-            vtype=_map_vartype(v.vartype),
-            name=v.name,
+            lb=variable.lowerbound,
+            ub=float("inf") if variable.upperbound is None else variable.upperbound,
+            vtype=_map_vartype(variable.vartype),
+            name=variable.name,
         )
 
 
 def _set_linear_constraints(problem: gp.Model, program: QuadraticProgram) -> None:
     """
     Set the linear constraints in the `Model` according to the Qiskit `QuadraticProgram`.
-    
+
     :param problem: the Gurobi `Model`
     :param program: the Qiskit `QuadraticProgram`
     """
     # "Changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient."
     # (Error message from scipy.) Indeed runtime with csr_array is excessive for larger instances
     # A = ss.csr_array((len(program.linear_constraints), len(program.variables)))
-    A = ss.lil_array((len(program.linear_constraints), len(program.variables)))
+    constraint_matrix = ss.lil_array(
+        (len(program.linear_constraints), len(program.variables))
+    )
     sense = np.empty(len(program.linear_constraints), np.str_)
-    b = np.empty(len(program.linear_constraints))
-    for c, constraint in enumerate(program.linear_constraints):
-        for (_, x), coefficient in constraint.linear.coefficients.items():
-            A[c, x] = coefficient
-        sense[c] = _map_sense(constraint.sense)
-        b[c] = constraint.rhs
+    rhs_vector = np.empty(len(program.linear_constraints))
+    for c_index, constraint in enumerate(program.linear_constraints):
+        for (_, x_index), coefficient in constraint.linear.coefficients.items():
+            constraint_matrix[c_index, x_index] = coefficient
+        sense[c_index] = _map_sense(constraint.sense)
+        rhs_vector[c_index] = constraint.rhs
 
-    problem.addMConstr(A, None, sense, b)
+    problem.addMConstr(constraint_matrix, None, sense, rhs_vector)
 
 
 def _set_quadratic_constraints(problem: gp.Model, program: QuadraticProgram) -> None:
     """
     Set the quadratic constraints in the `Model` according to the Qiskit `QuadraticProgram`.
-    
+
     :param problem: the Gurobi `Model`
     :param program: the Qiskit `QuadraticProgram`
     """
     for constraint in program.quadratic_constraints:
         # Q = ss.csr_array((len(program.variables), len(program.variables)))
-        Q = ss.lil_array((len(program.variables), len(program.variables)))
-        for (x, y), coefficient in constraint.quadratic.coefficients.items():
-            Q[x, y] = coefficient
+        constraint_matrix = ss.lil_array(
+            (len(program.variables), len(program.variables))
+        )
+        for (
+            x_index,
+            y_index,
+        ), coefficient in constraint.quadratic.coefficients.items():
+            constraint_matrix[x_index, y_index] = coefficient
 
-        c = np.zeros(len(program.variables))
-        for (_, x), coefficient in constraint.linear.coefficients.items():
-            c[x] = coefficient
+        constraint_vector = np.zeros(len(program.variables))
+        for (_, x_index), coefficient in constraint.linear.coefficients.items():
+            constraint_vector[x_index] = coefficient
 
-        problem.addMQConstr(Q, c, _map_sense(constraint.sense), constraint.rhs)
+        problem.addMQConstr(
+            constraint_matrix,
+            constraint_vector,
+            _map_sense(constraint.sense),
+            constraint.rhs,
+        )
 
 
 def _set_objective(problem: gp.Model, program: QuadraticProgram) -> None:
     """
     Set the objective in the `Model` according to the Qiskit `QuadraticProgram`.
-    
+
     :param problem: the Gurobi `Model`
     :param program: the Qiskit `QuadraticProgram`
     """
     # Q = ss.csr_array((len(program.variables), len(program.variables)))
-    Q = ss.lil_array((len(program.variables), len(program.variables)))
-    for (x, y), coefficient in program.objective.quadratic.coefficients.items():
-        Q[x, y] = coefficient
+    objective_matrix = ss.lil_array((len(program.variables), len(program.variables)))
+    for (
+        x_index,
+        y_index,
+    ), coefficient in program.objective.quadratic.coefficients.items():
+        objective_matrix[x_index, y_index] = coefficient
 
-    c = np.zeros(len(program.variables))
-    for (_, x), coefficient in program.objective.linear.coefficients.items():
-        c[x] = coefficient
+    objective_vector = np.zeros(len(program.variables))
+    for (_, x_index), coefficient in program.objective.linear.coefficients.items():
+        objective_vector[x_index] = coefficient
 
-    problem.setMObjective(Q, c, program.objective.constant, sense=gp.GRB.MINIMIZE)
+    problem.setMObjective(
+        objective_matrix,
+        objective_vector,
+        program.objective.constant,
+        sense=gp.GRB.MINIMIZE,
+    )
 
 
 class Gurobi(Platform):
     """The `Platform` implementation for Gurobi."""
-
-    def __init__(self, config: dict) -> None:
-        """
-        :param config: the model section of the configuration file
-        """
-        super().__init__(config)
 
     def translate_problem(self, step: ModelStep) -> gp.Model:
         """
@@ -140,7 +157,7 @@ class Gurobi(Platform):
 
         :param model: the `ModelStep` to translate
         :returns the model as a Gurobi `Model`
-       """
+        """
         problem = gp.Model(str(step))
         _set_variables(problem, step.program)
         _set_linear_constraints(problem, step.program)
@@ -156,9 +173,7 @@ class Gurobi(Platform):
         model = cast(gp.Model, problem)
         return model.NumVars
 
-    def solve(
-        self, problem: Any, timeout: int, num_solutions_desired: int
-    ) -> gp.Model:
+    def solve(self, problem: Any, timeout: int, num_solutions_desired: int) -> gp.Model:
         """
         Solves the `Model` and returns it as Gurobi embeds the results in the model.
 

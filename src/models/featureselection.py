@@ -27,7 +27,7 @@ class FeatureSelection(SimpleModel):
         # Set the number of features
         n_features = config["size"]
         # Generate the dataset
-        X, y = generate_dataset(
+        x_dataset, y_labels = generate_dataset(
             n_features,
             config.get("relevant_features", 0.2),
             config.get("n_samples", 1000),
@@ -38,7 +38,7 @@ class FeatureSelection(SimpleModel):
 
         # Prepare MIQUBO problem
         n_selected_features = int(n_features * config.get("selected_features", 0.1))
-        self.program = miqubo_problem(X, y, n_selected_features)
+        self.program = miqubo_problem(x_dataset, y_labels, n_selected_features)
 
 
 def prob(data: np.ndarray) -> np.ndarray:
@@ -56,18 +56,18 @@ def prob(data: np.ndarray) -> np.ndarray:
     return joint_prob.values
 
 
-def shannon_entropy(p: np.ndarray) -> np.ndarray:
+def shannon_entropy(probability: np.ndarray) -> np.ndarray:
     """
     Compute Shannon entropy of a probability distribution.
 
     :param p: the probability distribution
     :returns an array with the Shannon entropy
     """
-    p_nonzero = p[p > 0]
+    p_nonzero = probability[probability > 0]
     return -np.sum(p_nonzero * np.log2(p_nonzero))
 
 
-def conditional_shannon_entropy(p: np.ndarray, j: int) -> np.ndarray:
+def conditional_shannon_entropy(probability: np.ndarray, j: int) -> np.ndarray:
     """
     Compute conditional Shannon entropy of a probability distribution.
 
@@ -75,7 +75,7 @@ def conditional_shannon_entropy(p: np.ndarray, j: int) -> np.ndarray:
     :param j: the variable to compare to
     :returns an array with the conditional Shannon entropy
     """
-    p_joint = np.copy(p)
+    p_joint = np.copy(probability)
     p_joint = np.divide(p_joint, p_joint.sum())
 
     axis_to_sum = tuple([i for i in range(len(p_joint.shape)) if i != j])
@@ -84,7 +84,7 @@ def conditional_shannon_entropy(p: np.ndarray, j: int) -> np.ndarray:
     return shannon_entropy(p_joint) - shannon_entropy(p_conditional)
 
 
-def mutual_information(p: np.ndarray, j: int) -> np.ndarray:
+def mutual_information(probability: np.ndarray, j: int) -> np.ndarray:
     """
     Compute mutual information between all variables and variable j.
 
@@ -92,19 +92,20 @@ def mutual_information(p: np.ndarray, j: int) -> np.ndarray:
     :param j: the variable to compare to
     :returns an array with the mutual entropy information
     """
-    p_marginal = np.sum(p, axis=1 - j, keepdims=True)
+    p_marginal = np.sum(probability, axis=1 - j, keepdims=True)
     p_marginal /= p_marginal.sum()
-    return shannon_entropy(p_marginal) - conditional_shannon_entropy(p, j)
+    return shannon_entropy(p_marginal) - conditional_shannon_entropy(probability, j)
 
 
 def conditional_mutual_information(
     data: np.ndarray, j: int, *conditional_indices
 ) -> np.ndarray:
     """
-    Compute conditional mutual information between variables X and variable Y conditional on variable Z.
+    Compute conditional mutual information between variables X and variable Y conditional
+    on variable Z.
 
     :param data: the data
-    :param j:
+    :param j: axis
     :param conditional_indices:
     :returns an array with the conditional mutual entropy information
     """
@@ -114,7 +115,7 @@ def conditional_mutual_information(
     ) - conditional_shannon_entropy(data, j)
 
 
-def cmi_matrix(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+def cmi_matrix(x_data: np.ndarray, y_labels: np.ndarray) -> np.ndarray:
     """
     Compute conditional pairwise mutual information matrix.
 
@@ -122,18 +123,18 @@ def cmi_matrix(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     :param y: the labels
     :returns the matrix
     """
-    n_features = X.shape[1]
+    n_features = x_data.shape[1]
     cmi_mat = np.zeros((n_features, n_features))
 
     for i in range(n_features):
         for j in range(i + 1, n_features):
-            data = np.column_stack((y, X[:, i], X[:, j]))
+            data = np.column_stack((y_labels, x_data[:, i], x_data[:, j]))
             cmi_mat[i, j] = conditional_mutual_information(data, 1, 2)
 
     return cmi_mat
 
 
-def mi_scores(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+def mi_scores(x_data: np.ndarray, y_labels: np.ndarray) -> np.ndarray:
     """
     Compute mutual information scores between features and the target variable.
 
@@ -141,16 +142,16 @@ def mi_scores(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     :param y: the labels
     :returns a list of scores
     """
-    n_features = X.shape[1]
-    mi = np.zeros(n_features)
+    n_features = x_data.shape[1]
+    score_list = np.zeros(n_features)
 
     for i in range(n_features):
-        data = np.column_stack((y, X[:, i]))
-        p = prob(data)
-        mi_value = mutual_information(p, 1)
-        mi[i] = mi_value
+        data = np.column_stack((y_labels, x_data[:, i]))
+        probability = prob(data)
+        mi_value = mutual_information(probability, 1)
+        score_list[i] = mi_value
 
-    return mi
+    return score_list
 
 
 def normalize_bqm(linear_terms: dict, quadratic_terms: dict) -> Tuple[dict, dict]:
@@ -193,21 +194,22 @@ def normalize_bqm(linear_terms: dict, quadratic_terms: dict) -> Tuple[dict, dict
 
 
 def miqubo_problem(
-    X: np.ndarray, y: np.ndarray, n_selected_features: int
+    x_data: np.ndarray, y_labels: np.ndarray, n_selected_features: int
 ) -> QuadraticProgram:
     """
-    Creates an MIQUBO problem using features, target variable, and desired number of selected features.
+    Creates an MIQUBO problem using features, target variable, and desired number of
+    selected features.
 
-    :param X:
-    :param y:
+    :param X_dataset: the data set
+    :param y_labels: the labels
     :param n_selected_features: the number of features to select
     :returns the `QuadraticProgram`
     """
-    n_features = X.shape[1]
-    mi_scores_ = mi_scores(X, y)
+    n_features = x_data.shape[1]
+    mi_scores_ = mi_scores(x_data, y_labels)
 
     # Calculate conditional pairwise mutual information
-    pairwise_cmi = cmi_matrix(X, y)
+    pairwise_cmi = cmi_matrix(x_data, y_labels)
 
     # Create QUBO problem
     qubo = QuadraticProgram()
@@ -252,7 +254,8 @@ def generate_dataset(
     n_bins: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Generate a dataset with a specified number of features, samples, classes, random state, and bins.
+    Generate a dataset with a specified number of features, samples, classes, random state,
+    and bins.
 
     :param n_features: the number of features
     :param relevant_features: the number of features that are relevant
@@ -263,7 +266,7 @@ def generate_dataset(
     :returns a tuple with the discrete data X and labels y
     """
     n_informative = int(n_features * relevant_features)
-    X, y = make_classification(
+    x_data, y_labels = make_classification(
         n_samples=n_samples,
         n_features=n_features,
         n_classes=n_classes,
@@ -272,7 +275,9 @@ def generate_dataset(
     )
 
     # Discretize the continuous data into bins
-    discretizer = KBinsDiscretizer(n_bins=n_bins, encode="ordinal", strategy="uniform")
-    X_discrete = discretizer.fit_transform(X)
+    discretizer = KBinsDiscretizer(
+        n_bins=n_bins, encode="ordinal", strategy="uniform", subsample=None
+    )
+    x_discrete = discretizer.fit_transform(x_data)
 
-    return X_discrete, y
+    return x_discrete, y_labels

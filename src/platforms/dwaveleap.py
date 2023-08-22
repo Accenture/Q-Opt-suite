@@ -2,7 +2,7 @@
 Copyright (c) 2023 Objectivity Ltd.
 """
 
-from typing import Any, cast
+from typing import Any, Optional, cast
 import dimod  # type: ignore
 from models.qubo import ToQuboCallback
 
@@ -15,10 +15,15 @@ class DWaveQuboCallback(ToQuboCallback):
     """
 
     def __init__(self) -> None:
-        pass
+        self._bqm: Optional[dimod.BinaryQuadraticModel] = None
+
+    @property
+    def bqm(self) -> dimod.BinaryQuadraticModel:
+        """:returns the BQM"""
+        return cast(dimod.BinaryQuadraticModel, self._bqm)
 
     def set_num_variables(self, num_variables: int) -> None:
-        self.bqm = dimod.BinaryQuadraticModel(num_variables, dimod.BINARY)
+        self._bqm = dimod.BinaryQuadraticModel(num_variables, dimod.BINARY)
 
     def add_constant(self, constant: float) -> None:
         self.bqm.add_offset(constant)

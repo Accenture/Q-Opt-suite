@@ -2,10 +2,10 @@
 Copyright (c) 2023 Objectivity Ltd.
 """
 
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
-from qiskit_optimization import QuadraticProgram # type: ignore 
+from qiskit_optimization import QuadraticProgram  # type: ignore
 from models.model import ModelStep
 from models.qubo import ToQuboNumpyCallback
 from platforms.platform import Platform
@@ -25,6 +25,8 @@ class CSVReader(Platform):
 
         self._file = config.get("file")
         self._directory = config.get("directory")
+        self._program: Optional[QuadraticProgram] = None
+        self._name: Optional[str] = None
 
     def translate_problem(self, step: ModelStep) -> np.ndarray:
         """
@@ -35,9 +37,9 @@ class CSVReader(Platform):
         """
         self._program = step.program
         self._name = f"{self._file or step}-{step.program.get_num_vars()}"
-        cb = ToQuboNumpyCallback()
-        self.construct_qubo(step, cb)
-        return cb.interactions
+        callback = ToQuboNumpyCallback()
+        self.construct_qubo(step, callback)
+        return callback.interactions
 
     def num_variables(self, problem: np.ndarray) -> int:
         """
@@ -53,11 +55,11 @@ class CSVReader(Platform):
         """
         directory = self._directory + "/" if self._directory else ""
         filename = f"results/{directory}{self._name}.txt"
-        with open(filename, "r") as f:
-            for line in f.readlines():
+        with open(filename, "r", encoding="utf-8") as file:
+            for line in file.readlines():
                 if line.startswith(tuple("0123456789")):
                     return list(map(int, line.split(",")))
-        
+
         raise RuntimeError(f"No data found in {filename}")
 
     def translate_result(
@@ -65,7 +67,7 @@ class CSVReader(Platform):
         step: ModelStep,
         qubo: QuadraticProgram,
         result: Any,
-        num_solutions_desired: int
+        num_solutions_desired: int,
     ) -> np.ndarray:
         assert num_solutions_desired == 1
         return step.from_qubo(result)

@@ -7,8 +7,8 @@ Many thanks to Yaz Izumi of Toshiba.
 import logging
 import random
 from typing import Callable
-import numpy as np
 import math
+import numpy as np
 
 from qiskit_optimization import QuadraticProgram  # type: ignore
 from qiskit_optimization.problems.constraint import ConstraintSense  # type: ignore
@@ -96,7 +96,7 @@ class FindPackingSelection(ModelStep):
                     linear=linear, sense=ConstraintSense.EQ, rhs=1
                 )
             else:
-                logging.error(f"item {i} is not allocated anywhere")
+                logging.error("item %d is not allocated anywhere", i)
 
         linear = [1 for _ in range(len(candidates))]
         self.program.minimize(linear=linear)
@@ -134,10 +134,10 @@ class BinPackingSP(Model):
         ]
         num_candidates: int = int(config.get("candidates", len(self._weights)))
 
-        self._findPackingsForFirstBin = FindPackingsForFirstBin(
+        self._find_packings_for_first_bin = FindPackingsForFirstBin(
             self._weights, max_bin_weight, max_bin_weight, num_candidates
         )
-        self._findPackingSelection = FindPackingSelection(self._weights)
+        self._find_packing_selection = FindPackingSelection(self._weights)
 
         # for verification and to calculate a comparable energy to standard binpacking
         self._program = qabp.BinPacking(
@@ -146,16 +146,16 @@ class BinPackingSP(Model):
 
     def execute(self, step_callback: Callable[[ModelStep], list]) -> list:
         # step 1, find all (near-)optimal packings of one bin
-        self._findPackingSelection.candidates = list(
+        self._find_packing_selection.candidates = list(
             filter(
-                self._findPackingsForFirstBin.program.is_feasible,
-                step_callback(self._findPackingsForFirstBin),
+                self._find_packings_for_first_bin.program.is_feasible,
+                step_callback(self._find_packings_for_first_bin),
             )
         )
 
         # step 2, treat these candidate packings as a graph covering problem
         # and find a non-overlapping set of candidates packing all the items
-        candidate_selection: list = step_callback(self._findPackingSelection)
+        candidate_selection: list = step_callback(self._find_packing_selection)
 
         num_weights = len(self._weights)
         num_bins_used = 0
@@ -163,7 +163,7 @@ class BinPackingSP(Model):
         occupancy = np.zeros(shape=(num_weights, num_weights), dtype=np.int32)
         remaining_items = np.ones(shape=(num_weights), dtype=np.int32)
         for is_selected, candidate in zip(
-            candidate_selection, self._findPackingSelection.candidates
+            candidate_selection, self._find_packing_selection.candidates
         ):
             if is_selected:
                 occupancy[:, num_bins_used] = candidate

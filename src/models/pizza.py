@@ -82,16 +82,19 @@ class Pizza(SimpleModel):
     """
     A model for the "pizza parlour" linear programming problem.
 
-    On one hand, there is a range of ingredients available at given quantities. Each ingredient has a cost price.
+    On one hand, there is a range of ingredients available at given quantities. Each ingredient
+    has a cost price.
 
-    On the other hand, there is a range of pizza recipes we can make using the ingredients. Each pizza recipe has
-    a given sales price.
+    On the other hand, there is a range of pizza recipes we can make using the ingredients. Each
+    pizza recipe has a given sales price.
 
-    The optimisation goal is to maximise our profits while staying within the constraints of the given ingredient stock.
+    The optimisation goal is to maximise our profits while staying within the constraints of the
+    given ingredient stock.
 
-    This problem is not natural territory for annealers as it can be readily solved algorithmically, however, the
-    purpose here is not to provide the most efficient implementation but rather to assess how solver platforms that do
-    not natively support integers behave when confronted with the complex Hamiltonian landscape of binary-encoded integers.
+    This problem is not natural territory for annealers as it can be readily solved algorithmically,
+    however, the purpose here is not to provide the most efficient implementation but rather to
+    assess how solver platforms that do not natively support integers behave when confronted with
+    the complex Hamiltonian landscape of binary-encoded integers.
     """
 
     def __init__(self, config: dict) -> None:
@@ -131,10 +134,10 @@ class Pizza(SimpleModel):
             logging.debug(out.getvalue())
 
         self.program = QuadraticProgram("Pizza")
-        hc = _QiskitHamiltonianCallback(self.program)
-        ph.pizza_profit(self.model, hc)
-        hc.set_objective()
-        ph.stock_constraints(self.model, hc)
+        callback = _QiskitHamiltonianCallback(self.program)
+        ph.pizza_profit(self.model, callback)
+        callback.set_objective()
+        ph.stock_constraints(self.model, callback)
 
     def quality(self, result) -> float:
         quality = super().quality(result)
@@ -145,7 +148,7 @@ class Pizza(SimpleModel):
             for i, variable in enumerate(self.program.variables)
         }
         profit = ph.calculate_profit(self.model, sample)
-        logging.debug(f"profit {profit}, total={sum(profit.values())}")
+        logging.debug("profit %d, total=%d", profit, sum(profit.values()))
         return quality
 
     def is_feasible(self, result) -> bool:

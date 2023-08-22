@@ -9,6 +9,7 @@ from dwave.system import LeapHybridSampler  # type: ignore
 import numpy as np
 from qiskit_optimization import QuadraticProgram  # type: ignore
 from models.model import ModelStep
+from models.qubo import QuadraticProgramConverter
 
 from platforms.dwaveleap import DWaveLEAP, DWaveQuboCallback
 
@@ -33,9 +34,9 @@ class DWaveBQM(DWaveLEAP):
         :param model: the `ModelStep` to translate into the platform's native format
         :returns the model as a `BinaryQuadraticModel`
         """
-        cb = DWaveQuboCallback()
-        self.construct_qubo(step, cb)
-        return cb.bqm
+        callback = DWaveQuboCallback()
+        self.construct_qubo(step, callback)
+        return cast(dimod.BinaryQuadraticModel, callback.bqm)
 
     def num_variables(self, problem: Any) -> int:
         """
@@ -63,7 +64,7 @@ class DWaveBQM(DWaveLEAP):
 
         label = f"Dwave-BQM-{bqm.num_variables}"
         sampleset = self.sampler.sample(bqm, label=label, time_limit=timeout)
-        logging.info(f"DWave result energy={sampleset.first.energy}")
+        logging.info("DWave result energy=%f", sampleset.first.energy)
         return sampleset
 
     def translate_result(
@@ -75,7 +76,7 @@ class DWaveBQM(DWaveLEAP):
     ) -> np.ndarray:
         """
         Translates the `SampleSet` into variable values for the `QuadraticProgram`.
-        
+
         :param step: the `ModelStep` executing the optimisation problem
         :param qubo: the `QuadraticProgram` representing the model being solved
         :param sampleset: the optimised variable assignment of as a `SampleSet`

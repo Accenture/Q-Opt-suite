@@ -6,10 +6,10 @@ import logging
 import os
 from typing import Any
 
-import boto3 # type: ignore
-from botocore.config import Config # type: ignore
-from botocore.exceptions import ProfileNotFound # type: ignore
-from braket.aws import AwsSession # type: ignore
+import boto3  # type: ignore
+from botocore.config import Config  # type: ignore
+from botocore.exceptions import ProfileNotFound  # type: ignore
+from braket.aws import AwsSession  # type: ignore
 
 from platforms.platform import Platform
 
@@ -33,7 +33,7 @@ class AWSBraket(Platform):
             elif name.upper() in os.environ:
                 return os.environ[name.upper()]
             else:
-                logging.info(f"AWS: defaulting {name} to {default}")
+                logging.info("AWS: defaulting %s to %s", name, default)
                 return default
 
         def get_proxy_definitions():
@@ -48,7 +48,7 @@ class AWSBraket(Platform):
                 os.environ["HTTPS_PROXY"] = proxies["https"]
                 return proxies
             else:
-                logging.warn(
+                logging.warning(
                     "AWS: no http proxy configured, this could cause trouble if a VPN is being used"
                 )
                 return None
@@ -59,8 +59,9 @@ class AWSBraket(Platform):
         profile_name = get_config("aws_profile")
         if not profile_name:
             raise ValueError(
-                "AWS: no profile specified in config or environment. Create one using the CLI, see:\n"
-                "https://medium.com/ivymobility-developers/configure-named-aws-profile-usage-in-applications-aws-cli-60ea7f6f7b40"
+                "AWS: no profile specified in config or environment. Create one using the CLI,"
+                "see:\nhttps://medium.com/ivymobility-developers/"
+                "configure-named-aws-profile-usage-in-applications-aws-cli-60ea7f6f7b40"
             )
 
         try:
@@ -70,5 +71,5 @@ class AWSBraket(Platform):
             self.aws_session = AwsSession(
                 boto_session=self.boto_session, config=my_config
             )
-        except ProfileNotFound:
-            raise ValueError(f"AWS: profile {profile_name} could not be found!")
+        except ProfileNotFound as ex:
+            raise ValueError(f"AWS: profile {profile_name} could not be found!") from ex

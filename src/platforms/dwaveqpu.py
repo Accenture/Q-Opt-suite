@@ -4,10 +4,10 @@ Copyright (c) 2023 Objectivity Ltd.
 
 import logging
 from typing import Any, cast
-import dimod # type: ignore
-from dwave.system import DWaveSampler, EmbeddingComposite, FixedEmbeddingComposite # type: ignore
+import dimod  # type: ignore
+from dwave.system import DWaveSampler, EmbeddingComposite, FixedEmbeddingComposite  # type: ignore
 import numpy as np
-from qiskit_optimization import QuadraticProgram # type: ignore
+from qiskit_optimization import QuadraticProgram  # type: ignore
 from models.model import ModelStep
 
 from platforms.dwaveleap import DWaveQuboCallback, DWaveLEAP
@@ -21,7 +21,7 @@ class DWaveQPU(DWaveLEAP):
     def __init__(self, config: dict) -> None:
         """
         Instantiate the D-Wave sampler with the given configuration taken from the yaml file.
-        
+
         :param config: the model section of the configuration file
         """
         super().__init__(DWaveSampler, config)
@@ -36,11 +36,11 @@ class DWaveQPU(DWaveLEAP):
         :param model: the `ModelStep` to translate
         :returns the model as a `BinaryQuadraticModel`
         """
-        cb = DWaveQuboCallback()
-        self.construct_qubo(step, cb)
+        callback = DWaveQuboCallback()
+        self.construct_qubo(step, callback)
 
         sampleset = EmbeddingComposite(self.sampler).sample(
-            cb.bqm,
+            callback.bqm,
             return_embedding=True,
             answer_mode="raw",
             num_reads=1,
@@ -48,7 +48,7 @@ class DWaveQPU(DWaveLEAP):
         )
         embedding = sampleset.info["embedding_context"]["embedding"]
         self.embedded = FixedEmbeddingComposite(self.sampler, embedding)
-        return cb.bqm
+        return callback.bqm
 
     def num_variables(self, problem: Any) -> int:
         """
@@ -77,7 +77,7 @@ class DWaveQPU(DWaveLEAP):
         sampleset = self.embedded.sample(
             bqm, answer_mode="raw", num_reads=self.num_reads, annealing_time=timeout
         )
-        logging.info(f"DWave result energy={sampleset.first.energy}")
+        logging.info("DWave result energy=%f", sampleset.first.energy)
         return sampleset
 
     def translate_result(
@@ -89,7 +89,7 @@ class DWaveQPU(DWaveLEAP):
     ) -> np.ndarray:
         """
         Translates the `SampleSet` into variable values for the `QuadraticProgram`.
-        
+
         :param step: the `ModelStep` executing the optimisation problem
         :param qubo: the `QuadraticProgram` representing the model being solved
         :param result: the optimised variable assignment of as a `SampleSet`

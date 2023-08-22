@@ -7,27 +7,26 @@ import operator as op
 
 # callback abstracting the QCBO/QUBO model
 from abc import abstractmethod
-from re import L
-
-from sympy import true
 
 
 class HamiltonianCallback:
-    @abstractmethod
-    def add_linear(self, var, hi, cost):
-        pass
+    """Callback function used to construct the Hamiltonian."""
 
     @abstractmethod
-    def add_quadratic(self, var1, hi1, var2, hi2, cost):
-        pass
+    def add_linear(self, var, hi, cost):  # pylint: disable=C0103
+        """Add a linear term to the Hamiltonian."""
+
+    @abstractmethod
+    def add_quadratic(self, var1, hi1, var2, hi2, cost):  # pylint: disable=R0913
+        """Add a quadratic term to the Hamiltonian."""
 
     @abstractmethod
     def set_objective(self):
-        pass
+        """Add an objective term to the Hamiltonian."""
 
     @abstractmethod
-    def add_constraint(self, name, tuples, type, value):
-        pass
+    def add_constraint(self, name, tuples, sense, value):
+        """Add a constraint to the Hamiltonian."""
 
 
 def _get_cost_ceiling(model, ingredient, quantity):
@@ -41,7 +40,7 @@ def _summarise_cost_ceiling(ingredient1, ingredient2):
     return (cost1 + cost2, min(ceil1, ceil2))
 
 
-def pizza_profit(model, hc: HamiltonianCallback):
+def pizza_profit(model, callback: HamiltonianCallback):
     """calculate profit and roll it into the hamiltonian"""
     for name, properties in model["pizzas"].items():
         price, floor, ingredients = op.itemgetter(
@@ -51,7 +50,7 @@ def pizza_profit(model, hc: HamiltonianCallback):
             _summarise_cost_ceiling,
             map(lambda t: _get_cost_ceiling(model, *t), ingredients.items()),
         )
-        hc.add_linear(name, ceiling - floor, cost - price)
+        callback.add_linear(name, ceiling - floor, cost - price)
 
 
 # minimum quantity constraints
@@ -59,8 +58,7 @@ def pizza_profit(model, hc: HamiltonianCallback):
 # this means that we need to calculate effective stock levels
 
 
-
-def stock_constraints(model, hc: HamiltonianCallback):
+def stock_constraints(model, callback: HamiltonianCallback):
     """ingredient stock constraints"""
     inventory, pizzas = op.itemgetter("inventory", "pizzas")(model)
 
@@ -72,13 +70,12 @@ def stock_constraints(model, hc: HamiltonianCallback):
             stock[ingredient_name] -= minimum_pizzas * ingredient_quantity
         return stock
 
-    def _get_pizzas_for_ingredient(
-        tuples, ingredient_name, pizza_name, pizza_properties
-    ):
+    def _get_pizzas_for_ingredient(ingredient_name, constraints, pizza_data):
+        pizza_name, pizza_properties = pizza_data
         ingredients = pizza_properties["ingredients"]
         if ingredient_name in ingredients:
-            tuples.append((pizza_name, ingredients[ingredient_name]))
-        return tuples
+            constraints.append((pizza_name, ingredients[ingredient_name]))
+        return constraints
 
     effective_stock = ft.reduce(
         _reduce_by_minimum_pizzas,
@@ -93,19 +90,13 @@ def stock_constraints(model, hc: HamiltonianCallback):
     )
 
     for ingredient_name in inventory.keys():
-        hc.add_constraint(
+        qqq = ft.partial(_get_pizzas_for_ingredient, ingredient_name)
+        callback.add_constraint(
             f"{ingredient_name}-limit",
-            ft.reduce(
-                lambda constraints, pizza: _get_pizzas_for_ingredient(
-                    constraints, ingredient_name, *pizza
-                ),
-                pizzas.items(),
-                [],
-            ),
+            ft.reduce(qqq, pizzas.items(), []),
             "<=",
             effective_stock[ingredient_name],
         )
-
 
 
 def sample_to_production(model, sample):
@@ -123,9 +114,9 @@ def sample_to_production(model, sample):
     )
 
 
-
 def calculate_profit(model, sample):
     """calculate profit on a given production run"""
+
     def _pizza_profit(name, quantity):
         price, floor, ingredients = op.itemgetter(
             "price", "minimum_quantity", "ingredients"
@@ -164,6 +155,7 @@ def check_inventory(model, sample):
 
 
 def is_valid(model, sample):
+    """:returns whether the sample represents a valid solution"""
     try:
         next(
             filter(

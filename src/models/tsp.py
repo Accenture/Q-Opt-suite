@@ -2,7 +2,7 @@
 Copyright (c) 2023 Objectivity Ltd.
 """
 
-import qiskit_optimization.applications.tsp as tsp # type: ignore
+import qiskit_optimization.applications.tsp as tsp  # type: ignore
 
 from models.model import SimpleModel
 

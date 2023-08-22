@@ -64,8 +64,8 @@ def _convert_linear(
     :param item: the `((index, index), coefficient)` tuple representing the constraint item
     :returns the 2-tuple encoding the constraint
     """
-    (_, x), coefficient = item
-    return (variables[x].name, coefficient)
+    (_, var), coefficient = item
+    return (variables[var].name, coefficient)
 
 
 def _convert_quadratic(variables, item) -> Tuple[str, str, float]:
@@ -77,8 +77,8 @@ def _convert_quadratic(variables, item) -> Tuple[str, str, float]:
     :param item: the `((index1, index2), coefficient)` tuple representing the constraint item
     :returns the 3-tuple encoding the constraint
     """
-    (x, y), coefficient = item
-    return (variables[x].name, variables[y].name, coefficient)
+    (var1, var2), coefficient = item
+    return (variables[var1].name, variables[var2].name, coefficient)
 
 
 def _set_variables(cqm: dimod.ConstrainedQuadraticModel, program: QuadraticProgram):
@@ -89,13 +89,13 @@ def _set_variables(cqm: dimod.ConstrainedQuadraticModel, program: QuadraticProgr
     :param cqm: the D-Wave `ConstraintQuadraticModel`
     :param program: the Qiskit `QuadraticProgram`
     """
-    for v in program.variables:
-        vartype = _map_vartype(v.vartype)
+    for variable in program.variables:
+        vartype = _map_vartype(variable.vartype)
         cqm.add_variable(
             vartype=vartype,
-            v=v.name,
-            lower_bound=v.lowerbound,
-            upper_bound=v.upperbound,
+            v=variable.name,
+            lower_bound=variable.lowerbound,
+            upper_bound=variable.upperbound,
         )
 
 
@@ -109,12 +109,16 @@ def _set_linear_constraints(
     :param cqm: the D-Wave `ConstraintQuadraticModel`
     :param program: the Qiskit `QuadraticProgram`
     """
-    for c in program.linear_constraints:
+    for constraint in program.linear_constraints:
         coefficients = map(
-            partial(_convert_linear, program.variables), c.linear.coefficients.items()
+            partial(_convert_linear, program.variables),
+            constraint.linear.coefficients.items(),
         )
         cqm.add_constraint(
-            coefficients, sense=_map_sense(c.sense), rhs=c.rhs, label=c.name
+            coefficients,
+            sense=_map_sense(constraint.sense),
+            rhs=constraint.rhs,
+            label=constraint.name,
         )
 
 
@@ -128,19 +132,20 @@ def _set_quadratic_constraints(
     :param cqm: the D-Wave `ConstraintQuadraticModel`
     :param program: the Qiskit `QuadraticProgram`
     """
-    for c in program.quadratic_constraints:
+    for constraint in program.quadratic_constraints:
         linear_coefficients = map(
-            partial(_convert_linear, program.variables), c.linear.coefficients.items()
+            partial(_convert_linear, program.variables),
+            constraint.linear.coefficients.items(),
         )
         quadratic_coefficients = map(
             partial(_convert_quadratic, program.variables),
-            c.quadratic.coefficients.items(),
+            constraint.quadratic.coefficients.items(),
         )
         cqm.add_constraint(
             chain(linear_coefficients, quadratic_coefficients),
-            sense=_map_sense(c.sense),
-            rhs=c.rhs,
-            label=c.name,
+            sense=_map_sense(constraint.sense),
+            rhs=constraint.rhs,
+            label=constraint.name,
         )
 
 
@@ -223,7 +228,7 @@ class DWaveCQM(DWaveLEAP):
         is_feasible = len(feasible_sampleset.record) > 0
         sampleset = feasible_sampleset if is_feasible else sampleset
         logging.info(
-            f"DWave result energy={sampleset.first.energy} feasible={is_feasible}"
+            "DWave result energy=%f feasible=%s", sampleset.first.energy, is_feasible
         )
         return sampleset
 
@@ -236,7 +241,7 @@ class DWaveCQM(DWaveLEAP):
     ) -> list:
         """
         Translates the `SampleSet` into variable values for the `QuadraticProgram`.
-        
+
         :param step: the `ModelStep` executing the optimisation problem
         :param qubo: the `QuadraticProgram` representing the model being solved
         :param sampleset: the optimised variable assignment of as a `SampleSet`
@@ -249,8 +254,10 @@ class DWaveCQM(DWaveLEAP):
         sample = sampleset.first.sample
         result = [sample[var.name] for var in step.program.variables]
         if self._calculate_qubo_energy:
-            cb = EvaluateQuboCallback(result)
-            QuadraticProgramToQuboConverter(step.program, self._lagrange).convert(cb)
-            logging.info(f"Translated QUBO energy would be {cb.energy}")
+            callback = EvaluateQuboCallback(result)
+            QuadraticProgramToQuboConverter(step.program, self._lagrange).convert(
+                callback
+            )
+            logging.info("Translated QUBO energy would be %f", callback.energy)
 
         return result

@@ -6,14 +6,14 @@ from abc import abstractmethod
 from collections import namedtuple
 from itertools import repeat
 import logging
-from typing import List, Optional, Union, cast
+from typing import Any, List, Optional, Union, cast
 from math import log2, ceil
 from array import array
 import numpy as np
 
-from qiskit_optimization import QuadraticProgram # type: ignore
-from qiskit_optimization.problems.variable import Variable # type: ignore
-from qiskit_optimization.problems.constraint import Constraint, ConstraintSense # type: ignore
+from qiskit_optimization import QuadraticProgram  # type: ignore
+from qiskit_optimization.problems.variable import Variable  # type: ignore
+from qiskit_optimization.problems.constraint import Constraint, ConstraintSense  # type: ignore
 
 
 class ToQuboCallback:
@@ -30,7 +30,6 @@ class ToQuboCallback:
         variables. The "names" of the variables will be `range(num_variables)`. The default
         implementation does nothing.
         """
-        pass
 
     @abstractmethod
     def add_constant(self, constant: float) -> None:
@@ -73,6 +72,8 @@ class ToQuboDeduplicatingCallback(ToQuboCallback):
     def __init__(self, is_lower_half: bool = True) -> None:
         super().__init__()
         self.is_lower_half = is_lower_half
+        self.constant = 0.0
+        self.interactions: list[array] = []
 
     def set_num_variables(self, num_variables: int) -> None:
         """Set the number of binary variables in the QUBO."""
@@ -115,7 +116,7 @@ class ToQuboDeduplicatingCallback(ToQuboCallback):
         In order to maintain memory efficiency **this method is destructive** and consumes
         the interaction matrix during its execution.
         """
-        logging.debug(f"offset={self.constant}")
+        logging.debug("offset=%f", self.constant)
         for interaction in self.interactions:
             logging.debug("\t".join(map(str, interaction)))
 
@@ -138,6 +139,10 @@ class ToQuboNumpyCallback(ToQuboCallback):
     def __init__(self, is_lower_half: bool = True) -> None:
         super().__init__()
         self.is_lower_half = is_lower_half
+        self.constant = 0.0
+        self.interactions: np.ndarray[Any, np.dtype[np.float64]] = np.zeros(
+            [0, 0], dtype=np.float64
+        )
 
     def set_num_variables(self, num_variables: int) -> None:
         self.constant = 0.0
@@ -166,14 +171,14 @@ class QuadraticProgramConverter:
         self.program: QuadraticProgram = program
 
     @abstractmethod
-    def convert(self, cb: ToQuboCallback) -> None:
+    def convert(self, callback: ToQuboCallback) -> None:
         """
         Convert the encapsulated QuadraticProgram to a QUBO using the callback.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def interpret(self, x: Union[np.ndarray, List[float]]) -> np.ndarray:
+    def interpret(self, result: Union[np.ndarray, List[float]]) -> np.ndarray:
         """
         Interpret a QUBO result back into a result for the original `QuadraticProgram`
         using the conversion information.
@@ -191,26 +196,29 @@ class QuadraticProgramIdentityConverter(QuadraticProgramConverter):
     A trivial "converter" used when the QuadraticProgram is already in QUBO format.
     """
 
-    def convert(self, cb: ToQuboCallback) -> None:
+    def convert(self, callback: ToQuboCallback) -> None:
         """
         Constructs a platform-specific QUBO directly from the information in the
         `QuadraticProgram` as the latter is already a QUBO
         """
-        cb.set_num_variables(len(self.program.variables))
+        callback.set_num_variables(len(self.program.variables))
 
-        cb.add_constant(self.program.objective.constant)
-
-        for (_, x), coefficient in self.program.objective.linear.coefficients.items():
-            cb.add_linear(x, coefficient)
+        callback.add_constant(self.program.objective.constant)
 
         for (
-            x,
-            y,
+            _,
+            var_x,
+        ), coefficient in self.program.objective.linear.coefficients.items():
+            callback.add_linear(var_x, coefficient)
+
+        for (
+            var_x,
+            var_y,
         ), coefficient in self.program.objective.quadratic.coefficients.items():
-            if x != y:
-                cb.add_quadratic(x, y, coefficient)
+            if var_x != var_y:
+                callback.add_quadratic(var_x, var_y, coefficient)
             else:  # the Qiskit QuadraticProgramToQubo converter commits this horror
-                cb.add_linear(x, coefficient)
+                callback.add_linear(var_x, coefficient)
 
     def interpret(self, result: Union[np.ndarray, list[float]]) -> np.ndarray:
         """Returns `result`. The QUBO results need no interpretation in this identity mapping"""
@@ -221,26 +229,24 @@ class QuadraticProgramIdentityConverter(QuadraticProgramConverter):
         return len(self.program.variables)
 
 
-"""
-Structured tuple storing information about the mapping of a problem variable to QUBO
-
-- `index` the index of the variable in the QUBO model
-- `bits` the number of bits occupied in the QUBO model
-- `msb_coef` the coefficient of the most significant bit (the others are `2**bit_position`)
-- `upperbound` the upper bound (inclusive) of the variable
-- `lowerbound` the lower bound (inclusive) of the variable
-"""
+# Structured tuple storing information about the mapping of a problem variable to QUBO
+#
+# - `index` the index of the variable in the QUBO model
+# - `bits` the number of bits occupied in the QUBO model
+# - `msb_coef` the coefficient of the most significant bit (the others are `2**bit_position`)
+# - `upperbound` the upper bound (inclusive) of the variable
+# - `lowerbound` the lower bound (inclusive) of the variable
 VariableMappingInfo = namedtuple(
     "VariableMappingInfo", ["index", "bits", "msb_coef", "upperbound", "lowerbound"]
 )
 
 
-def coeff(var: VariableMappingInfo, b: int) -> float:
+def coeff(variable: VariableMappingInfo, bit: int) -> float:
     """
     Return the value of the given bit in the variable. This is `2**bit_position` except
     for the most significant bit which has a value to match the range of the variable.
     """
-    return float(2**b) if b < var.bits - 1 else var.msb_coef
+    return float(2**bit) if bit < variable.bits - 1 else variable.msb_coef
 
 
 class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
@@ -269,7 +275,7 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
             num_bits = ceil(
                 log2(upperbound - lowerbound + 1)
             )  # upperbound is inclusive
-            # The coefficient of the most significant bit is tuned to produce exactly the variable range
+            # The coeff of the most significant bit is tuned to produce exactly the variable range
             msb_coef = float(upperbound - lowerbound) - (2 ** (num_bits - 1) - 1)
             var = VariableMappingInfo(
                 self.num_qubo_vars, num_bits, msb_coef, upperbound, lowerbound
@@ -282,21 +288,28 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
             if variable.vartype == Variable.Type.BINARY:
                 var = allocate_variable(1)
                 logging.debug(
-                    f"adding binary problem variable {variable.name} at position {var.index}"
+                    "adding binary problem variable %s at position %d",
+                    variable.name,
+                    var.index,
                 )
             elif variable.vartype == Variable.Type.INTEGER:
                 var = allocate_variable(variable.upperbound, variable.lowerbound)
                 logging.debug(
-                    f"adding {var.bits} bit integer problem variable {variable.name} at position {var.index}"
+                    "adding %d bit integer problem variable %s at position %d",
+                    var.bits,
+                    variable.name,
+                    var.index,
                 )
             else:
                 raise RuntimeError(f"Variable type {variable.vartype} not implemented")
             return var
 
-        def allocate_slack_variable(constraint: Constraint) -> Optional[VariableMappingInfo]:
-            # Allocate QUBO variable space for the given slack variable. There are some special inequality
-            # constraint forms that do not require a slack variable but as they don't occur in our models
-            # we're making no effort to detect those.
+        def allocate_slack_variable(
+            constraint: Constraint,
+        ) -> Optional[VariableMappingInfo]:
+            # Allocate QUBO variable space for the given slack variable. There are some special
+            # inequality constraint forms that do not require a slack variable but as they don't
+            # occur in our models we're making no effort to detect those.
             if constraint.sense == ConstraintSense.LE:
                 lowerbound = (
                     constraint.linear.bounds.lowerbound
@@ -314,68 +327,77 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
                     f"Constraint sense {constraint.sense} not implemented"
                 )
             logging.debug(
-                f"adding slack variable of {var.bits} bits for {constraint.name} at position {var.index}"
+                "adding slack variable of %d bits for %s at position %d",
+                var.bits,
+                constraint.name,
+                var.index,
             )
             return var
 
         # Create the QUBO variable mapping for the `QuadraticProgram`
         self.problem_variables = list(map(allocate_problem_variable, program.variables))
-        self.slack_variables = list(map(allocate_slack_variable, program.linear_constraints))
+        self.slack_variables = list(
+            map(allocate_slack_variable, program.linear_constraints)
+        )
         if program.quadratic_constraints:
             raise RuntimeError("Quadratic constraints not implemented")
 
-    def convert(self, cb: ToQuboCallback) -> None:
+    def convert(self, callback: ToQuboCallback) -> None:
         """Convert the `QuadraticProgram` into a QUBO using the provided callback function"""
-        cb.set_num_variables(self.num_qubo_vars)
+        callback.set_num_variables(self.num_qubo_vars)
 
         def add_linear(var: VariableMappingInfo, coefficient: float) -> None:
-            # Add a linear term to the QUBO by binary-mapping the integer (or, trivially, binary) variable.
+            # Add a linear term to the QUBO by binary-mapping the integer (or, trivially,
+            # binary) variable.
             if coefficient == 0.0:
                 return
-            for b in range(var.bits):
-                cb.add_linear(var.index + b, coefficient * coeff(var, b))
+            for bit in range(var.bits):
+                callback.add_linear(var.index + bit, coefficient * coeff(var, bit))
             # The variable's lowerbound generates a constant term
-            cb.add_constant(coefficient * var.lowerbound)
+            callback.add_constant(coefficient * var.lowerbound)
 
         def add_quadratic(
             var1: VariableMappingInfo, var2: VariableMappingInfo, coefficient: float
         ) -> None:
-            # Add a quadratic term to the QUBO by binary-mapping the integer (or, trivially, binary) variable.
+            # Add a quadratic term to the QUBO by binary-mapping the integer (or, trivially,
+            # binary) variable.
             if coefficient == 0.0:
                 return
-            for b1 in range(var1.bits):
-                qubo_index1 = var1.index + b1
-                for b2 in range(var2.bits):
-                    qubo_index2 = var2.index + b2
-                    qubo_bias = coefficient * coeff(var1, b1) * coeff(var2, b2)
+            for bit1 in range(var1.bits):
+                qubo_index1 = var1.index + bit1
+                for bit2 in range(var2.bits):
+                    qubo_index2 = var2.index + bit2
+                    qubo_bias = coefficient * coeff(var1, bit1) * coeff(var2, bit2)
                     if qubo_index1 > qubo_index2:  # move everything above the diagonal
-                        cb.add_quadratic(qubo_index2, qubo_index1, qubo_bias)
+                        callback.add_quadratic(qubo_index2, qubo_index1, qubo_bias)
                     elif qubo_index1 < qubo_index2:
-                        cb.add_quadratic(qubo_index1, qubo_index2, qubo_bias)
+                        callback.add_quadratic(qubo_index1, qubo_index2, qubo_bias)
                     else:  # qubo_index1 == qubo_index2, self-interaction a^2=a in a QUBO
-                        cb.add_linear(qubo_index1, qubo_bias)
+                        callback.add_linear(qubo_index1, qubo_bias)
 
             # the variables' lower bounds generate linear cross-terms in the multiplication
             # as well as a constant lowerbound1*lowerbound2 term
             add_linear(var1, coefficient * var2.lowerbound)
             add_linear(var2, coefficient * var1.lowerbound)
             # the above double-counted var1.lowerbound * var2.lowerbound, compensate here
-            cb.add_constant(-coefficient * var1.lowerbound * var2.lowerbound)
+            callback.add_constant(-coefficient * var1.lowerbound * var2.lowerbound)
 
         def add_objective():
             # Add the `QuadraticProgram` objective terms to the QUBO
             for (
                 _,
-                v,
+                var,
             ), coefficient in self.program.objective.linear.coefficients.items():
-                add_linear(self.problem_variables[v], coefficient)
+                add_linear(self.problem_variables[var], coefficient)
 
             for (
-                v1,
-                v2,
+                var1,
+                var2,
             ), coefficient in self.program.objective.quadratic.coefficients.items():
                 add_quadratic(
-                    self.problem_variables[v1], self.problem_variables[v2], coefficient
+                    self.problem_variables[var1],
+                    self.problem_variables[var2],
+                    coefficient,
                 )
 
         def determine_objective_scale() -> float:
@@ -387,7 +409,7 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
                 + (lin_b.upperbound - lin_b.lowerbound)
                 + (quad_b.upperbound - quad_b.lowerbound)
             )
-            logging.debug(f"objective has a scale of {objective_scale}")
+            logging.debug("objective has a scale of %f", objective_scale)
             return objective_scale
 
         def add_linear_equality_constraint(
@@ -400,32 +422,32 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
             #     + 2*sum(a_i*a_j) - 2*rhs*sum(a_i)
 
             # sum(a_i^2) + 2*sum(a_i*a_j)  (implemented as sum (a_i*a_j) without enforcing j>i)
-            for (_, v1), coefficient1 in constraint.linear.coefficients.items():
-                for (_, v2), coefficient2 in constraint.linear.coefficients.items():
+            for (_, var1), coefficient1 in constraint.linear.coefficients.items():
+                for (_, var2), coefficient2 in constraint.linear.coefficients.items():
                     add_quadratic(
-                        self.problem_variables[v1],
-                        self.problem_variables[v2],
+                        self.problem_variables[var1],
+                        self.problem_variables[var2],
                         coefficient1 * coefficient2 * lagrange,
                     )
 
             # rhs^2
-            cb.add_constant(constraint.rhs**2 * lagrange)
+            callback.add_constant(constraint.rhs**2 * lagrange)
 
             # -2*rhs*sum(a_i)
-            for (_, v), coefficient in constraint.linear.coefficients.items():
+            for (_, var), coefficient in constraint.linear.coefficients.items():
                 add_linear(
-                    self.problem_variables[v],
+                    self.problem_variables[var],
                     -2 * constraint.rhs * coefficient * lagrange,
                 )
 
         def add_linear_inequality_constraint(
-            c: int, constraint: Constraint, lagrange: float, sense: int
+            c_index: int, constraint: Constraint, lagrange: float, sense: int
         ) -> None:
             # Add a linear inequality constraint to the QUBO.  There are some special inequality
-            # constraint forms that do not require a slack variable but as they don't occur in our models
-            # we're making no effort to detect those.
-            assert self.slack_variables[c] is not None
-            slack_variable = cast(VariableMappingInfo, self.slack_variables[c])
+            # constraint forms that do not require a slack variable but as they don't occur in our
+            # models we're making no effort to detect those.
+            assert self.slack_variables[c_index] is not None
+            slack_variable = cast(VariableMappingInfo, self.slack_variables[c_index])
 
             # for <= we add (sum(a_i) - rhs + slack)^2
             #   = sum(a_i^2) + rhs^2 + slack^2
@@ -439,9 +461,9 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
             add_quadratic(slack_variable, slack_variable, lagrange)
 
             # 2*slack sum(a_i)
-            for (_, v), coefficient in constraint.linear.coefficients.items():
+            for (_, var), coefficient in constraint.linear.coefficients.items():
                 add_quadratic(
-                    self.problem_variables[v],
+                    self.problem_variables[var],
                     slack_variable,
                     2 * sense * coefficient * lagrange,
                 )
@@ -451,20 +473,20 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
 
         # Add the `QuadraticProgram` constraint terms to the QUBO
         def add_linear_constraints(lagrange: float):
-            for c, constraint in enumerate(self.program.linear_constraints):
+            for c_index, constraint in enumerate(self.program.linear_constraints):
                 if constraint.sense == ConstraintSense.EQ:
                     add_linear_equality_constraint(constraint, lagrange)
                 elif constraint.sense == ConstraintSense.LE:
-                    add_linear_inequality_constraint(c, constraint, lagrange, +1)
+                    add_linear_inequality_constraint(c_index, constraint, lagrange, +1)
                 elif constraint.sense == ConstraintSense.GE:
-                    add_linear_inequality_constraint(c, constraint, lagrange, -1)
+                    add_linear_inequality_constraint(c_index, constraint, lagrange, -1)
                 else:
                     raise RuntimeError(
                         f"Constraint sense {constraint.sense} not implemented"
                     )
 
         # Quadratic constraints are not supported
-        def add_quadratic_constraints(lagrange: float):
+        def add_quadratic_constraints(lagrange: float):  # pylint: disable=W0613
             if self.program.quadratic_constraints:
                 raise NotImplementedError
 
@@ -473,16 +495,20 @@ class QuadraticProgramToQuboConverter(QuadraticProgramConverter):
         add_linear_constraints(lagrange)
         add_quadratic_constraints(lagrange)
 
-    def interpret(self, x: Union[np.ndarray, List[float]]) -> np.ndarray:
+    def interpret(self, qubo_result: Union[np.ndarray, List[float]]) -> np.ndarray:
         """
         Interprets the QUBO result into a result for the original `QuadraticProgram` by
         reverse-mapping the integer variables and discarding the slack variables
         """
         result = np.empty([len(self.problem_variables)], dtype="int")
-        for v, var in enumerate(self.problem_variables):
-            result[v] = var.lowerbound  # np.empty() creates an uninitisalised array
-            for b in range(var.bits):
-                result[v] += int(x[var.index + b] * coeff(var, b))
+        for var, variable in enumerate(self.problem_variables):
+            # np.empty() creates an uninitisalised array
+            result[var] = variable.lowerbound
+
+            for bit in range(variable.bits):
+                result[var] += int(
+                    qubo_result[variable.index + bit] * coeff(variable, bit)
+                )
 
         return result
 
@@ -495,9 +521,9 @@ class EvaluateQuboCallback(ToQuboCallback):
     """Callback that evaluates a given QUBO result"""
 
     def __init__(
-        self, x: Union[np.ndarray, List[float]], evaluate_constant: bool = False
+        self, result: Union[np.ndarray, List[float]], evaluate_constant: bool = False
     ) -> None:
-        self._x = x
+        self._result = result
         self._evaluate_constant = evaluate_constant
         self.energy = 0.0
         super().__init__()
@@ -507,4 +533,4 @@ class EvaluateQuboCallback(ToQuboCallback):
             self.energy += constant
 
     def add_quadratic(self, var1: int, var2: int, coefficient: float) -> None:
-        self.energy += self._x[var1] * self._x[var2] * coefficient
+        self.energy += self._result[var1] * self._result[var2] * coefficient

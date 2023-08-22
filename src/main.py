@@ -3,14 +3,13 @@ Copyright (c) 2023 Objectivity Ltd.
 """
 
 import argparse
-import collections as c
 import logging
 import random
 import time
-from typing import Iterator, List, Optional, Tuple, cast
+from typing import Iterator, List, Optional, cast
+import importlib
 import psutil
 import yaml
-import importlib
 from models.model import Model, ModelStep
 
 from util.logging import BenchmarkLogger, BenchmarkSummary, BenchmarkResult, Stat
@@ -50,16 +49,18 @@ def single_benchmark(
     random.seed(0)  # make sure that the pseudo-RNG produces consistent results
     model: Model = model_class(config)  # instantiate the model
     timeout: int = int(config.get("timeout", 60))
-    logging.info(f"Running size={config['size']} timeout={timeout}")
+    logging.info("Running size=%d timeout=%d", config["size"], timeout)
 
     # Translate the problem into the platform-specific format and do a timed run
     stats: list[Stat] = []
 
-    def log_stats(info):
-        mi = psutil.Process().memory_info()
-        stat = Stat(time.time(), mi.rss, mi.vms)
-        elapsed = stat.time - stats[len(stats) - 1].time if len(stats) else 0
-        logging.debug(f"{info} time={int(elapsed)}s rss={stat.rss}k vms={stat.vms}k")
+    def log_stats(info: str):
+        memory_info = psutil.Process().memory_info()
+        stat = Stat(time.time(), memory_info.rss, memory_info.vms)
+        elapsed = stat.time - stats[len(stats) - 1].time if stats else 0
+        logging.debug(
+            "%s time=%ds rss=%dk vms=%dk", info, int(elapsed), stat.rss, stat.vms
+        )
         stats.append(stat)
 
     info: List[Optional[str]] = []
@@ -69,16 +70,16 @@ def single_benchmark(
 
     def execute_step(step: ModelStep):
         platform_problem = platform.translate_problem(step)
-        v = platform.num_variables(platform_problem)
+        num_variables = platform.num_variables(platform_problem)
         log_stats(
-            f"Problem formulated variables={v}"
+            f"Problem formulated variables={num_variables}"
             + (
                 ", {step.num_solutions_desired} solutions desired"
                 if step.num_solutions_desired > 1
                 else ""
             )
         )
-        variables.append(v)
+        variables.append(num_variables)
         platform_result = platform.solve(
             platform_problem, timeout, step.num_solutions_desired
         )
@@ -93,16 +94,16 @@ def single_benchmark(
         return step_result
 
     log_stats("Initiating")
-    result = model.execute(execute_step)  # TODO handle stats with multi-step algorithms
+    result = model.execute(execute_step)
 
     # Interpret the result returned by the platform
     is_feasible = model.is_feasible(result)
     if is_feasible:
         quality = model.quality(result)
-        logging.info(f"Completed with quality {quality}")
+        logging.info("Completed with quality %f", quality)
     else:
         quality = None
-        logging.warning(f"Completed but solution is infeasible")
+        logging.warning("Completed but solution is infeasible")
 
     total_cost = sum(cast(List[float], cost)) if None not in cost else None
     total_time = (
@@ -121,7 +122,7 @@ def single_benchmark(
     )
 
 
-def model_benchmarks(
+def model_benchmarks(  # pylint: disable=R0913
     platform_factory: Iterator[Platform],
     platform_name: str,
     model_name: str,
@@ -156,14 +157,12 @@ def model_benchmarks(
                             next(platform_factory), model_class, size_config
                         )
                     )
-            except MemoryError as error:
-                result.info = "Out of memory"
-                logging.exception(result.info)
-            except Exception as error:
-                result.info = str(error)
-                logging.exception(result.info)
+            except MemoryError:
+                result.add_exception("Out of memory")
+            except Exception as error:  # pylint: disable=W0718
+                result.add_exception(error)
             finally:
-                logger.log_result(result)
+                logger.log_summary(result)
 
 
 def platform_benchmarks(
@@ -198,7 +197,7 @@ def platform_benchmarks(
             )
 
 
-class BenchmarkManager:
+class BenchmarkManager:  # pylint: disable=R0903
     """
     Manages the running of the configured benchmarks.
     """
@@ -231,13 +230,11 @@ class BenchmarkManager:
             ):  # using top level models... but only if the platform is enabled
                 models = self.config.get("models")
             else:  # platform is disabled and no locally specified models that could override it
-                logging.debug(f"Skipping {platform_name} because it is disabled")
+                logging.debug("Skipping %s because it is disabled", platform_name)
                 continue
 
             if not models:
-                logging.debug(
-                    f"Skipping {platform_name} because there are no models to run"
-                )
+                logging.debug("Skipping %s because there are no models", platform_name)
                 continue
 
             factory = create_platform_factory(
@@ -258,14 +255,13 @@ def main() -> None:
         parser.add_argument("-c", "--config", help="Provide config file")
         args = parser.parse_args()
         config_name = args.config if args.config else "default.yml"
-        logging.debug(f"Loading config file {config_name}")
-        config = yaml.load(open(config_name), Loader=yaml.FullLoader)
-        bm = BenchmarkManager(config)
-        bm.benchmark()
+        logging.debug("Loading config file %s", config_name)
+        config = yaml.load(open(config_name, encoding="utf-8"), Loader=yaml.FullLoader)
+        BenchmarkManager(config).benchmark()
 
-    except Exception as e:
-        logging.exception(e)
-        raise e
+    except Exception as exception:
+        logging.exception(exception)
+        raise exception
 
 
 if __name__ == "__main__":

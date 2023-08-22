@@ -2,13 +2,13 @@
 Copyright (c) 2023 Objectivity Ltd.
 """
 
-from typing import Any, List
-from azure.quantum import Workspace # type: ignore
+from typing import Any, List, cast
+from azure.quantum import Workspace  # type: ignore
 import azure.quantum.optimization as aqo  # type: ignore
-from qiskit_optimization import QuadraticProgram # type: ignore
+from qiskit_optimization import QuadraticProgram  # type: ignore
 
 from models.model import ModelStep
-from models.qubo import ToQuboDeduplicatingCallback
+from models.qubo import QuadraticProgramConverter, ToQuboDeduplicatingCallback
 from platforms.platform import Platform
 
 
@@ -109,7 +109,7 @@ class Azure(Platform):
         step: ModelStep,
         qubo: QuadraticProgram,
         result: Any,
-        num_solutions_desired: int
+        num_solutions_desired: int,
     ) -> list:
         """
         Translates the `Problem` result into variable values for the `QuadraticProgram`

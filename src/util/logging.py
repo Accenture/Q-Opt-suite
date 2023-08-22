@@ -4,10 +4,9 @@ Copyright (c) 2023 Objectivity Ltd.
 
 from dataclasses import dataclass
 import datetime as dt
-from functools import reduce
 import logging
 import os
-from typing import Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Any, Iterable, Iterator, Optional, Tuple, Union
 import yaml  # type: ignore
 
 
@@ -40,42 +39,48 @@ class BenchmarkSummary:
     """
 
     def __init__(self, platform_name: str, model_name: str, size: int) -> None:
-        self.platform_name = platform_name
-        self.model_name = model_name
-        self.size = size
-        self.iteration = 0
-        self.variables: Optional[int] = None
-        self.timeout: Optional[int] = None
-        self.is_error: bool = True
-        self.is_feasible: bool = False
-        self.quality: Optional[float] = None
-        self.timings: Optional[list] = None
-        self.solver_time: Optional[float] = None
-        self.cost: Optional[float] = None
-        self.rss: list[int] = []
-        self.vms: list[int] = []
-        self.info: str = ""
+        self._platform_name = platform_name
+        self._model_name = model_name
+        self._size = size
+        self._iteration = 0
+        self._result = BenchmarkResult
+        self._variables: Optional[int] = None
+        self._timeout: Optional[int] = None
+        self._is_error: bool = True
+        self._is_feasible: bool = False
+        self._quality: Optional[float] = None
+        self._timings: Optional[list] = None
+        self._solver_time: Optional[float] = None
+        self._cost: Optional[float] = None
+        self._rss: list[int] = []
+        self._vms: list[int] = []
+        self._info: str = ""
 
     def _avg_scalar(self, name: str, value: Optional[Union[int, float]]) -> None:
         """Update a simple average value"""
         if value is not None and (avg := getattr(self, name)) is not None:
-            new_sum = value + avg * self.iteration
-            setattr(self, name, new_sum / (self.iteration + 1))
+            new_sum = value + avg * self._iteration
+            setattr(self, name, new_sum / (self._iteration + 1))
         else:  # even a single None invalidates the entire average
             setattr(self, name, None)
 
     def _avg_list(self, name: str, values: Iterable[float]) -> None:
         """Update a list of average values"""
-        a = getattr(self, name)
+        average = getattr(self, name)
         for i, value in enumerate(values):
-            new_sum = value + a[i] * self.iteration
-            a[i] = new_sum / (self.iteration + 1)
+            new_sum = value + average[i] * self._iteration
+            average[i] = new_sum / (self._iteration + 1)
 
     def _max_list(self, name: str, values: Iterable[float]) -> None:
         """Update a list of values keeping the maximum for each"""
-        a = getattr(self, name)
+        maximum = getattr(self, name)
         for i, value in enumerate(values):
-            a[i] = max(a[i], value)
+            maximum[i] = max(maximum[i], value)
+
+    def add_exception(self, info: Any):
+        """:param info: the information to add"""
+        self._info = f"{self._info}, {info}" if self._info else str(info)
+        logging.exception(str(info))
 
     def add_result(
         self,
@@ -87,9 +92,9 @@ class BenchmarkSummary:
         :param result The benchmark result tuple
         """
 
-        def time_diff(a: Tuple[Stat, Stat]) -> float:
+        def time_diff(stat_pair: Tuple[Stat, Stat]) -> float:
             # calculate the time difference between two stat entries
-            return round(a[1].time - a[0].time, 3)
+            return round(stat_pair[1].time - stat_pair[0].time, 3)
 
         def create_groups(i: Iterator, group_size: int = 3):
             # iterate through the iterator in groups (of size 3 by default)
@@ -105,29 +110,50 @@ class BenchmarkSummary:
         )
         rss = map(lambda s: s.rss // 1024, result.stats)
         vms = map(lambda s: s.vms // 1024, result.stats)
-        if not self.is_feasible:  # first (feasible) result
-            self.variables = result.variables
-            self.timeout = result.timeout
-            self.is_error = False
-            self.is_feasible = result.is_feasible
-            self.quality = result.quality
-            self.solver_time = result.solver_time
-            self.cost = result.cost
-            self.timings = list(timings)
-            self.rss = list(rss)
-            self.vms = list(vms)
-            self.info = result.info
-            self.iteration = 1
+        if not self._is_feasible:  # first (feasible) result
+            self._variables = result.variables
+            self._timeout = result.timeout
+            self._is_error = False
+            self._is_feasible = result.is_feasible
+            self._quality = result.quality
+            self._solver_time = result.solver_time
+            self._cost = result.cost
+            self._timings = list(timings)
+            self._rss = list(rss)
+            self._vms = list(vms)
+            self._info = result.info
+            self._iteration = 1
         elif result.is_feasible:  # subsequent results only incorporated if feasible
-            assert self.variables == result.variables
-            self._avg_scalar("timeout", result.timeout)
-            self._avg_scalar("quality", result.quality)
-            self._avg_scalar("solver_time", result.solver_time)
-            self._avg_scalar("cost", result.cost)
-            self._avg_list("timings", timings)
-            self._max_list("rss", rss)
-            self._max_list("vms", vms)
-            self.iteration += 1
+            assert self._variables == result.variables
+            self._avg_scalar("_timeout", result.timeout)
+            self._avg_scalar("_quality", result.quality)
+            self._avg_scalar("_solver_time", result.solver_time)
+            self._avg_scalar("_cost", result.cost)
+            self._avg_list("_timings", timings)
+            self._max_list("_rss", rss)
+            self._max_list("_vms", vms)
+            self._iteration += 1
+
+    def to_csv(self) -> str:
+        """
+        :returns a CSV representation of the result
+        """
+        return (
+            f'"{self._platform_name}",'
+            f'"{self._model_name}",'
+            f"{self._size},"
+            f'{self._variables or ""},'
+            f'{self._timeout or ""},'
+            f"{self._is_error},"
+            f"{self._is_feasible},"
+            f'{self._quality if self._quality is not None else ""},'
+            f'{",".join(map(str, self._timings)) if self._timings else ",,"},'
+            f'{self._solver_time or ""},'
+            f'{self._cost or ""},'
+            f'{max(self._rss) if self._rss else ""},'
+            f'{max(self._vms) if self._vms else ""},'
+            f'"{self._info or ""}"'
+        )
 
 
 class BenchmarkLogger:
@@ -168,36 +194,21 @@ class BenchmarkLogger:
             force=True,
         )
 
-        with open(f"{self.directory}/config.yml", "w") as out:
+        with open(f"{self.directory}/config.yml", "w", encoding="utf-8") as out:
             yaml.dump(config, out)
 
-        with open(f"{self.resultsfile}", "w") as out:
+        with open(f"{self.resultsfile}", "w", encoding="utf-8") as out:
             print(
-                f"Platform,Model,Size,Variables,Timeout,Error,Feasible,Quality,TTProblemInS,TTSolveInS,TTEvaluateInS,SolverTimeInS,Cost,RssMaxK,VmsMaxK,Info",
+                "Platform,Model,Size,Variables,Timeout,Error,Feasible,Quality,TTProblemInS,"
+                "TTSolveInS,TTEvaluateInS,SolverTimeInS,Cost,RssMaxK,VmsMaxK,Info",
                 file=out,
             )
 
-    def log_result(self, result: BenchmarkSummary) -> None:
+    def log_summary(self, summary: BenchmarkSummary) -> None:
         """
         Log a single benchmark result to the results file.
 
         :param result: the benchmark result to log
         """
-        with open(f"{self.resultsfile}", "a") as out:
-            print(
-                f'"{result.platform_name}",'
-                f'"{result.model_name}",'
-                f"{result.size},"
-                f'{result.variables or ""},'
-                f'{result.timeout or ""},'
-                f"{result.is_error},"
-                f"{result.is_feasible},"
-                f'{result.quality if result.quality is not None else ""},'
-                f'{",".join(map(str, result.timings)) if result.timings else ",,"},'
-                f'{result.solver_time or ""},'
-                f'{result.cost or ""},'
-                f'{max(result.rss) if result.rss else ""},'
-                f'{max(result.vms) if result.vms else ""},'
-                f'"{result.info or ""}"',
-                file=out,
-            )
+        with open(f"{self.resultsfile}", "a", encoding="utf-8") as out:
+            print(summary.to_csv(), file=out)

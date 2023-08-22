@@ -29,7 +29,7 @@ class Cases:
         self.length = np.repeat(data["case_length"], data["quantity"])
         self.width = np.repeat(data["case_width"], data["quantity"])
         self.height = np.repeat(data["case_height"], data["quantity"])
-        logging.debug(f"Number of cases: {self.num_cases}")
+        logging.debug("Number of cases: %d", self.num_cases)
 
 
 class Bins:
@@ -58,7 +58,7 @@ class Bins:
         print(f"Minimum Number of bins required: {self.lowest_num_bin}")
 
 
-class BinPacking3D(SimpleModel):
+class BinPacking3D(SimpleModel):  # pylint: disable=R0902
     """
     Model class for the 3D Binpacking problem
     https://github.com/dwave-examples/3d-bin-packing
@@ -70,12 +70,14 @@ class BinPacking3D(SimpleModel):
         """
         super().__init__(config)
 
-        def partition(N, M):
+        def partition(num_total, num_partitions):
             partitions = []
-            for i in range(M - 1):
-                partition = random.randint(1, N - sum(partitions) - (M - i - 1))
+            for i in range(num_partitions - 1):
+                partition = random.randint(
+                    1, num_total - sum(partitions) - (num_partitions - i - 1)
+                )
                 partitions.append(partition)
-            partitions.append(N - sum(partitions))
+            partitions.append(num_total - sum(partitions))
             return partitions
 
         num_cases = config["size"]
@@ -111,19 +113,19 @@ class BinPacking3D(SimpleModel):
     def _add_variables(self, cases: Cases, bins: Bins):
         num_cases = cases.num_cases
         num_bins = bins.num_bins
-        self.x = self.program.integer_var_list(
+        self._x = self.program.integer_var_list(
             num_cases, lowerbound=0, upperbound=bins.length * bins.num_bins, name="x_"
         )
-        self.y = self.program.integer_var_list(
+        self._y = self.program.integer_var_list(
             num_cases, lowerbound=0, upperbound=bins.width, name="y_"
         )
-        self.z = self.program.integer_var_list(
+        self._z = self.program.integer_var_list(
             num_cases, lowerbound=0, upperbound=bins.height, name="z_"
         )
-        self.bin_height = self.program.integer_var_list(
+        self._bin_height = self.program.integer_var_list(
             num_bins, lowerbound=0, upperbound=bins.height, name="upper_bound_"
         )
-        self.bin_loc = {
+        self._bin_loc = {
             (i, j): self.program.binary_var(name=f"case_{i}_in_bin_{j}")
             if num_bins > 1
             else 1
@@ -131,22 +133,22 @@ class BinPacking3D(SimpleModel):
             for j in range(num_bins)
         }
 
-        self.bin_loc = {
+        self._bin_loc = {
             (i, j): self.program.binary_var(name=f"case_{i}_in_bin_{j}")
             for i in range(num_cases)
             for j in range(num_bins)
         }
-        self.bin_on = self.program.binary_var_list(
+        self._bin_on = self.program.binary_var_list(
             num_bins, name="bin_", key_format="{}_is_used"
         )
 
-        self.o = {
+        self._o = {
             (i, k): self.program.binary_var(name=f"o_{i}_{k}")
             for i in range(num_cases)
             for k in range(6)
         }
 
-        self.selector = {
+        self._selector = {
             (i, j, k): self.program.binary_var(name=f"sel_{i}_{j}_{k}")
             for i, j in combinations(range(num_cases), r=2)
             for k in range(6)
@@ -154,25 +156,27 @@ class BinPacking3D(SimpleModel):
 
     def _add_orientation_constraints(self, cases: Cases) -> list:
         num_cases = cases.num_cases
-        dx: Dict[int, Dict[str, int]] = {}
-        dy: Dict[int, Dict[str, int]] = {}
-        dz: Dict[int, Dict[str, int]] = {}
+        d_x: Dict[int, Dict[str, int]] = {}
+        d_y: Dict[int, Dict[str, int]] = {}
+        d_z: Dict[int, Dict[str, int]] = {}
         for i in range(num_cases):
-            p1 = list(permutations([cases.length[i], cases.width[i], cases.height[i]]))
-            dx[i] = {}
-            dy[i] = {}
-            dz[i] = {}
-            for j, (a, b, c) in enumerate(p1):
-                dx[i] |= {self.o[i, j].name: a}
-                dy[i] |= {self.o[i, j].name: b}
-                dz[i] |= {self.o[i, j].name: c}
+            perm_list = list(
+                permutations([cases.length[i], cases.width[i], cases.height[i]])
+            )
+            d_x[i] = {}
+            d_y[i] = {}
+            d_z[i] = {}
+            for j, (perm_a, perm_b, perm_c) in enumerate(perm_list):
+                d_x[i] |= {self._o[i, j].name: perm_a}
+                d_y[i] |= {self._o[i, j].name: perm_b}
+                d_z[i] |= {self._o[i, j].name: perm_c}
 
         for i in range(num_cases):
             # one-hot constraint that each case can only be in one orientation at a time
             self.program.quadratic_constraint(
-                linear={self.o[i, k].name: -1 for k in range(6)},
+                linear={self._o[i, k].name: -1 for k in range(6)},
                 quadratic={
-                    (self.o[i, k].name, self.o[i, l].name): 2
+                    (self._o[i, k].name, self._o[i, l].name): 2
                     for k in range(6)
                     for l in range(6)
                     if l > k
@@ -181,7 +185,7 @@ class BinPacking3D(SimpleModel):
                 rhs=-1,
                 name=f"orientation_{i}",
             )
-        return [dx, dy, dz]
+        return [d_x, d_y, d_z]
 
     def _add_bin_on_constraint(self, bins: Bins, cases: Cases):
         num_cases = cases.num_cases
@@ -189,9 +193,9 @@ class BinPacking3D(SimpleModel):
         if num_bins > 1:
             for j in range(num_bins):
                 self.program.quadratic_constraint(
-                    linear={self.bin_loc[i, j].name: 1 for i in range(num_cases)},
+                    linear={self._bin_loc[i, j].name: 1 for i in range(num_cases)},
                     quadratic={
-                        (self.bin_on[j].name, self.bin_loc[i, j].name): -1
+                        (self._bin_on[j].name, self._bin_loc[i, j].name): -1
                         for i in range(num_cases)
                     },
                     sense="<=",
@@ -200,7 +204,7 @@ class BinPacking3D(SimpleModel):
                 )
             for j in range(num_bins - 1):
                 self.program.linear_constraint(
-                    linear={self.bin_on[j].name: 1, self.bin_on[j + 1].name: -1},
+                    linear={self._bin_on[j].name: 1, self._bin_on[j + 1].name: -1},
                     sense=">=",
                     rhs=0,
                     name=f"bin_use_order_{j}",
@@ -211,14 +215,14 @@ class BinPacking3D(SimpleModel):
     ):
         num_cases = cases.num_cases
         num_bins = bins.num_bins
-        dx, dy, dz = effective_dimensions
+        d_x, d_y, d_z = effective_dimensions
 
         for i, k in combinations(range(num_cases), r=2):
             # one-hot constraint
             self.program.quadratic_constraint(
-                linear={self.selector[i, k, s].name: -1 for s in range(6)},
+                linear={self._selector[i, k, s].name: -1 for s in range(6)},
                 quadratic={
-                    (self.selector[i, k, s].name, self.selector[i, k, t].name): 2
+                    (self._selector[i, k, s].name, self._selector[i, k, t].name): 2
                     for s in range(6)
                     for t in range(6)
                     if t > s
@@ -228,15 +232,15 @@ class BinPacking3D(SimpleModel):
                 name=f"discrete_{i}_{k}",
             )
             for j in range(num_bins):
-                cases_on_same_bin = (self.bin_loc[i, j].name, self.bin_loc[k, j].name)
+                cases_on_same_bin = (self._bin_loc[i, j].name, self._bin_loc[k, j].name)
 
                 self.program.quadratic_constraint(
                     linear={
-                        self.selector[i, k, 0].name: num_bins * bins.length,
-                        self.x[i].name: 1,
-                        self.x[k].name: -1,
+                        self._selector[i, k, 0].name: num_bins * bins.length,
+                        self._x[i].name: 1,
+                        self._x[k].name: -1,
                     }
-                    | dx[i],
+                    | d_x[i],
                     quadratic={cases_on_same_bin: num_bins * bins.length},
                     sense="<=",
                     rhs=2 * num_bins * bins.length,
@@ -245,11 +249,11 @@ class BinPacking3D(SimpleModel):
 
                 self.program.quadratic_constraint(
                     linear={
-                        self.selector[i, k, 1].name: bins.width,
-                        self.y[i].name: 1,
-                        self.y[k].name: -1,
+                        self._selector[i, k, 1].name: bins.width,
+                        self._y[i].name: 1,
+                        self._y[k].name: -1,
                     }
-                    | dy[i],
+                    | d_y[i],
                     quadratic={cases_on_same_bin: bins.width},
                     sense="<=",
                     rhs=2 * bins.width,
@@ -258,11 +262,11 @@ class BinPacking3D(SimpleModel):
 
                 self.program.quadratic_constraint(
                     linear={
-                        self.selector[i, k, 2].name: bins.height,
-                        self.z[i].name: 1,
-                        self.z[k].name: -1,
+                        self._selector[i, k, 2].name: bins.height,
+                        self._z[i].name: 1,
+                        self._z[k].name: -1,
                     }
-                    | dz[i],
+                    | d_z[i],
                     quadratic={cases_on_same_bin: bins.height},
                     sense="<=",
                     rhs=2 * bins.height,
@@ -271,11 +275,11 @@ class BinPacking3D(SimpleModel):
 
                 self.program.quadratic_constraint(
                     linear={
-                        self.selector[i, k, 3].name: num_bins * bins.length,
-                        self.x[i].name: -1,
-                        self.x[k].name: 1,
+                        self._selector[i, k, 3].name: num_bins * bins.length,
+                        self._x[i].name: -1,
+                        self._x[k].name: 1,
                     }
-                    | dx[k],
+                    | d_x[k],
                     quadratic={cases_on_same_bin: num_bins * bins.length},
                     sense="<=",
                     rhs=2 * num_bins * bins.length,
@@ -284,11 +288,11 @@ class BinPacking3D(SimpleModel):
 
                 self.program.quadratic_constraint(
                     linear={
-                        self.selector[i, k, 4].name: bins.width,
-                        self.y[i].name: -1,
-                        self.y[k].name: 1,
+                        self._selector[i, k, 4].name: bins.width,
+                        self._y[i].name: -1,
+                        self._y[k].name: 1,
                     }
-                    | dy[k],
+                    | d_y[k],
                     quadratic={cases_on_same_bin: bins.width},
                     sense="<=",
                     rhs=2 * bins.width,
@@ -297,11 +301,11 @@ class BinPacking3D(SimpleModel):
 
                 self.program.quadratic_constraint(
                     linear={
-                        self.selector[i, k, 5].name: bins.height,
-                        self.z[i].name: -1,
-                        self.z[k].name: 1,
+                        self._selector[i, k, 5].name: bins.height,
+                        self._z[i].name: -1,
+                        self._z[k].name: 1,
                     }
-                    | dz[k],
+                    | d_z[k],
                     quadratic={cases_on_same_bin: bins.height},
                     sense="<=",
                     rhs=2 * bins.height,
@@ -312,9 +316,9 @@ class BinPacking3D(SimpleModel):
             for i in range(num_cases):
                 # one-hot constraint
                 self.program.quadratic_constraint(
-                    linear={self.bin_loc[i, j].name: -1 for j in range(num_bins)},
+                    linear={self._bin_loc[i, j].name: -1 for j in range(num_bins)},
                     quadratic={
-                        (self.bin_loc[i, j].name, self.bin_loc[i, k].name): 2
+                        (self._bin_loc[i, j].name, self._bin_loc[i, k].name): 2
                         for j in range(num_bins)
                         for k in range(num_bins)
                         if k > j
@@ -329,16 +333,16 @@ class BinPacking3D(SimpleModel):
     ):
         num_cases = cases.num_cases
         num_bins = bins.num_bins
-        dx, dy, dz = effective_dimensions
+        d_x, d_y, d_z = effective_dimensions
         for i in range(num_cases):
             for j in range(num_bins):
                 self.program.linear_constraint(
                     linear={
-                        self.z[i].name: 1,
-                        self.bin_height[j].name: -1,
-                        self.bin_loc[i, j].name: bins.height,
+                        self._z[i].name: 1,
+                        self._bin_height[j].name: -1,
+                        self._bin_loc[i, j].name: bins.height,
                     }
-                    | dz[i],
+                    | d_z[i],
                     sense="<=",
                     rhs=bins.height,
                     name=f"maxx_height_{i}_{j}",
@@ -346,10 +350,10 @@ class BinPacking3D(SimpleModel):
 
                 self.program.linear_constraint(
                     linear={
-                        self.x[i].name: 1,
-                        self.bin_loc[i, j].name: num_bins * bins.length,
+                        self._x[i].name: 1,
+                        self._bin_loc[i, j].name: num_bins * bins.length,
                     }
-                    | dx[i],
+                    | d_x[i],
                     sense="<=",
                     rhs=bins.length * (j + 1 + num_bins),
                     name=f"maxx_{i}_{j}_less",
@@ -357,8 +361,8 @@ class BinPacking3D(SimpleModel):
 
                 self.program.linear_constraint(
                     linear={
-                        self.x[i].name: 1,
-                        self.bin_loc[i, j].name: -bins.length * j,
+                        self._x[i].name: 1,
+                        self._bin_loc[i, j].name: -bins.length * j,
                     },
                     sense=">=",
                     rhs=0,
@@ -366,40 +370,38 @@ class BinPacking3D(SimpleModel):
                 )
 
                 self.program.linear_constraint(
-                    linear={self.y[i].name: 1} | dy[i],
+                    linear={self._y[i].name: 1} | d_y[i],
                     sense="<=",
                     rhs=bins.width,
                     name=f"maxy_{i}_{j}_less",
                 )
 
     def _define_objective(self, bins: Bins, cases: Cases, effective_dimensions: list):
-        num_cases = cases.num_cases
-        num_bins = bins.num_bins
-        _, _, dz = effective_dimensions
+        _, _, d_z = effective_dimensions
 
         first_obj_coefficient = 1.0
         second_obj_coefficient = 1.0
         third_obj_coefficient = 1.0
 
-        def scale():
-            pass
-
         # First term of objective: minimize average height of cases
         first_obj_term: Dict[str, float] = {}
-        c = first_obj_coefficient / num_cases
-        for i in range(num_cases):
-            first_obj_term |= {self.z[i].name: c} | {k: v * c for k, v in dz[i].items()}
+        coeff = first_obj_coefficient / cases.num_cases
+        for i in range(cases.num_cases):
+            first_obj_term |= {self._z[i].name: coeff} | {
+                k: v * coeff for k, v in d_z[i].items()
+            }
 
         # Second term of objective: minimize height of the case at the top of the
         # bin
         second_obj_term: Dict[str, float] = {
-            self.bin_height[j].name: second_obj_coefficient for j in range(num_bins)
+            self._bin_height[j].name: second_obj_coefficient
+            for j in range(bins.num_bins)
         }
 
         # Third term of the objective:
         third_obj_term: Dict[str, float] = {
-            self.bin_on[j].name: bins.height * third_obj_coefficient
-            for j in range(num_bins)
+            self._bin_on[j].name: bins.height * third_obj_coefficient
+            for j in range(bins.num_bins)
         }
 
         self.program.minimize(linear=first_obj_term | second_obj_term | third_obj_term)

@@ -5,8 +5,8 @@ Copyright (c) 2023 Objectivity Ltd.
 import logging
 from typing import Any, cast
 
-import azure.quantum.optimization as aqo # type: ignore
-import azure.quantum.target.oneqbit as oneqbit # type: ignore
+import azure.quantum.optimization as aqo  # type: ignore
+import azure.quantum.target.oneqbit as oneqbit  # type: ignore
 
 from platforms.azure import Azure
 
@@ -31,7 +31,7 @@ class OneQBit(Azure):
     def solve(self, problem: Any, timeout: int, num_solutions_desired: int) -> Any:
         aqo_problem = cast(aqo.Problem, problem)
         assert num_solutions_desired == 1  # TODO implement multiple result support
-        
+
         solver_class = getattr(oneqbit, self._solver_config["class"])
         config = {k: v for k, v in self._solver_config.items() if k != "class"}
         if timeout:
@@ -39,7 +39,7 @@ class OneQBit(Azure):
         solver = solver_class(self._workspace, **config)
 
         results = solver.optimize(aqo_problem)
-        logging.info(f"1QBit result cost={results['solutions'][0]['cost']}")
+        logging.info("1QBit result cost=%f", results["solutions"][0]["cost"])
         return results
 
     def __str__(self) -> str:

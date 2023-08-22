@@ -22,12 +22,13 @@ def generate_model(
     :param avg_pizzas:    average pizzas per product line
     :param avg_ingredients: average ingredients per pizza
     :param avg_price:     average pizza price
-    :param variability:   amount of variation around the means
+    :param variability:   amount of variation around the mean
     :param margin:        the average profit margin
     :returns the model
     """
-    def vary(n):
-        return int(n * variability ** (r.random() * 2 - 1))
+
+    def vary(average):
+        return int(average * variability ** (r.random() * 2 - 1))
 
     avg_ingredient_stock = num_pizzas * avg_pizzas * avg_ingredients // num_ingredients
     avg_ingredient_price = avg_price // avg_ingredients // margin
@@ -49,15 +50,15 @@ def generate_model(
             "price": vary(avg_ingredient_price),
         }
 
-    for p in range(num_pizzas):
-        model["pizzas"][f"pizza{p}"] = {
+    for j in range(num_pizzas):
+        model["pizzas"][f"pizza{j}"] = {
             "ingredients": {"dough": 1, "tomato": 1},
             "minimum_quantity": vary(avg_min_pizzas),
             "price": vary(avg_price),
         }
-        for j in range(vary(avg_ingredients - 2)):
+        for _ in range(vary(avg_ingredients - 2)):
             i = r.randrange(0, num_ingredients - 2)
-            model["pizzas"][f"pizza{p}"]["ingredients"][f"ingredient{i}"] = r.randrange(
+            model["pizzas"][f"pizza{j}"]["ingredients"][f"ingredient{i}"] = r.randrange(
                 1, 3
             )
 

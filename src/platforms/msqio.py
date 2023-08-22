@@ -5,7 +5,7 @@ Copyright (c) 2023 Objectivity Ltd.
 import logging
 from typing import Any, cast
 
-import azure.quantum.optimization as aqo # type: ignore
+import azure.quantum.optimization as aqo  # type: ignore
 
 from platforms.azure import Azure
 
@@ -40,10 +40,12 @@ class MSQIO(Azure):
         solver = solver_class(self._workspace, **config)
 
         logging.debug(
-            f"About to submit problem, solver={self._solver_config['class']} config={config}"
+            "About to submit problem, solver=%s config=%s",
+            self._solver_config["class"],
+            config,
         )
         results = solver.optimize(aqo_problem)
-        logging.info(f"MSQIO result cost={results['solutions'][0]['cost']}")
+        logging.info("MSQIO result cost=%f", results["solutions"][0]["cost"])
         return results
 
     def __str__(self) -> str:

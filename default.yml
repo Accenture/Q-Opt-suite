@@ -1,0 +1,474 @@
+########################################################################################
+# Final benchmarking configuration for all benchmarked machines
+
+name: default
+logging: info
+models:
+  Pizza:
+    - {size: 10, timeout: 5}
+    - {size: 30, timeout: 5}
+    - {size: 100, timeout: 5}
+    - {size: 300, timeout: 10}
+    - {size: 1000, timeout: 20}
+    - {size: 3000, timeout: 30}
+    - {size: 10000, timeout: 60}
+    - {size: 30000, timeout: 90}
+    - {size: 100000, timeout: 300}
+    - {size: 300000}
+  BinPacking:
+    - {size: 3, timeout: 5, item_weight: [1, 5], max_bin_weight: 6}
+    - {size: 10, timeout: 5, item_weight: [1, 5], max_bin_weight: 6}
+    - {size: 30, timeout: 10, item_weight: [1, 5], max_bin_weight: 6}
+    - {size: 100, timeout: 20, item_weight: [1, 5], max_bin_weight: 6}
+    - {size: 300, timeout: 300, item_weight: [1, 5], max_bin_weight: 6}
+    - {size: 1000, timeout: 300, item_weight: [1, 5], max_bin_weight: 6} # over 500k variables
+  SK:
+    - {size: 10, timeout: 5}
+    - {size: 30, timeout: 5}
+    - {size: 100, timeout: 20}
+    - {size: 300, timeout: 30}
+    - {size: 1000, timeout: 60}
+    - {size: 3000, timeout: 90}
+    - {size: 10000, timeout: 300}
+  TSP:
+    - {size: 3, timeout: 5}
+    - {size: 10, timeout: 5}
+    - {size: 30, timeout: 15}
+    - {size: 100, timeout: 45}
+    - {size: 300, timeout: 180}
+    - {size: 1000, timeout: 600} # over 500k variables
+  FeatureSelection:
+    - {size: 10, timeout: 5}
+    - {size: 30, timeout: 5}
+    - {size: 100, timeout: 20}
+    - {size: 300, timeout: 30}
+    - {size: 1000, timeout: 60}
+    - {size: 3000, timeout: 90}
+    - {size: 10000, timeout: 300, enabled: false} # OOM in problem.to_quadratic_program()
+repeats: 1
+enabled: false
+platforms:
+
+  ########################################################################################
+  # D-Wave LEAP
+
+  DWaveCQM:
+    class: DWaveCQM
+    token: "DEV-0000000000000000000000000000000000000000" # insert your own key here
+
+  ########################################################################################
+  # D-Wave raw QPU
+
+  DWaveQPU_3500:
+    class: DWaveQPU
+    token: "DEV-0000000000000000000000000000000000000000" # insert your own key here
+    num_reads: 3500
+    lagrange: 1.5
+    models:
+      Pizza:
+        - {size: 10, timeout: 25}
+        - {size: 30, timeout: 35}
+        - {size: 100, timeout: 50}
+      BinPacking:
+        - {size: 3, timeout: 25, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 10, timeout: 30, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 30, timeout: 70, item_weight: [1, 5], max_bin_weight: 6}
+      TSP:
+        - {size: 3, timeout: 5}
+        - {size: 10, timeout: 15}
+        - {size: 30, timeout: 30}
+        - {size: 100, timeout: 60}
+
+  DWaveQPU_1000:
+    class: DWaveQPU
+    token: "DEV-0000000000000000000000000000000000000000" # insert your own key here
+    num_reads: 1000
+    models:
+      SK:
+        - {size: 10, timeout: 50}
+        - {size: 30, timeout: 100}
+        - {size: 100, timeout: 150}
+        - {size: 300, timeout: 200}
+      FeatureSelection:
+        - {size: 10, timeout: 25}
+        - {size: 30, timeout: 50}
+        - {size: 100, timeout: 75}
+        - {size: 300, timeout: 100}
+
+  ########################################################################################
+  # Microsoft MSQIO
+
+  MSQIO_PopulationAnnealing_2.5_Final:
+    class: MSQIO
+    subscription_id: "00000000-0000-0000-0000-000000000000" # insert your own key here
+    resource_group: resource_group # insert your own group here
+    name: name # insert your own name here
+    lagrange: 2.5
+    solver:
+      class: PopulationAnnealing
+    models:
+      Pizza:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 10}
+        - {size: 100, timeout: 15}
+        - {size: 300, timeout: 30}
+        - {size: 600, timeout: 60}
+        - {size: 1000, timeout: 120}
+        - {size: 3000, timeout: 240}
+
+  MSQIO_SimulatedAnnealing_2.5_Final:
+    class: MSQIO
+    subscription_id: "00000000-0000-0000-0000-000000000000" # insert your own key here
+    resource_group: resource_group # insert your own group here
+    name: name # insert your own name here
+    lagrange: 2.5
+    solver:
+      class: SimulatedAnnealing
+    models:
+      BinPacking:
+        - {size: 3, timeout: 5, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 10, timeout: 15, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 30, timeout: 30, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 100, timeout: 60, item_weight: [1, 5], max_bin_weight: 6}
+      SK:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 60}
+        - {size: 300, timeout: 90}
+        - {size: 1000, timeout: 180}
+        - {size: 3000, timeout: 240}
+        - {size: 10000, timeout: 240}
+      TSP:
+        - {size: 3, timeout: 5}
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 45}
+        - {size: 300, timeout: 180}
+        #- {size: 1000, timeout: 300} # over 500k variables
+      FeatureSelection:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 5}
+        - {size: 100, timeout: 20}
+        - {size: 300, timeout: 30}
+        - {size: 1000, timeout: 60}
+        - {size: 3000, timeout: 90}
+
+  ########################################################################################
+  # 1QBit
+
+  OneQBit_PathRelinkingSolver_2.0:
+    class: OneQBit
+    subscription_id: "00000000-0000-0000-0000-000000000000" # insert your own key here
+    resource_group: resource_group # insert your own group here
+    name: name # insert your own name here
+    location: uk-south # West Europe
+    lagrange: 2.0
+    solver:
+      class: PathRelinkingSolver
+    models:
+      Pizza:
+        - {size: 10}
+        - {size: 30}
+        - {size: 100}
+        - {size: 300}
+      BinPacking:
+        - {size: 3, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 10, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 30, item_weight: [1, 5], max_bin_weight: 6}
+      SK:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 5}
+        - {size: 100, timeout: 20}
+        - {size: 300, timeout: 30}
+        - {size: 1000, timeout: 60}
+        - {size: 3000, timeout: 90}
+      TSP:
+        - {size: 3, timeout: 5}
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 45}
+        - {size: 300, timeout: 180}
+        #- {size: 1000, timeout: 300} # over 500k variables
+      FeatureSelection:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 5}
+        - {size: 100, timeout: 20}
+        - {size: 300, timeout: 30}
+        - {size: 1000, timeout: 60}
+        - {size: 3000, timeout: 90}
+
+  ########################################################################################
+  # Quantagonia
+
+  Quantagonia2.5_Final:
+    class: Quantagonia
+    api_key: "K0000000000000000000000000000000" # insert your own key here
+    lagrange: 2.5
+    models:
+      Pizza:
+        - {size: 10, timeout: 15}
+        - {size: 30, timeout: 30}
+        - {size: 100, timeout: 60}
+        - {size: 300, timeout: 120}
+        - {size: 1000, timeout: 240}
+      SK:
+        - {size: 10, timeout: 15}
+        - {size: 30, timeout: 30}
+        - {size: 100, timeout: 60}
+        - {size: 300, timeout: 90}
+        - {size: 1000, timeout: 120}
+      FeatureSelection:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 5}
+        - {size: 100, timeout: 20}
+        - {size: 300, timeout: 30}
+        - {size: 1000, timeout: 60}
+        - {size: 3000, timeout: 90}
+
+  Quantagonia10_Final:
+    class: Quantagonia
+    api_key: "K0000000000000000000000000000000" # insert your own key here
+    lagrange: 10
+    models:
+      BinPacking:
+        - {size: 3, timeout: 15, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 10, timeout: 90, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 30, timeout: 240, item_weight: [1, 5], max_bin_weight: 6}
+      TSP:
+        - {size: 3, timeout: 5}
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        # larger TSP problems exceed the 4,096 variable limit
+
+  ########################################################################################
+  # Toshiba 1
+
+  ToshibaBraketSQBM1.5:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 2.0
+      dt: 0.44065672159194946
+    lagrange: 1.5
+    models:
+      Pizza:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 10}
+        - {size: 100, timeout: 15}
+        - {size: 300, timeout: 30}
+
+  ToshibaBraketSQBM1.5_large:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 2.0
+      dt: 0.00810098648071289
+    lagrange: 1.5
+    models:
+      Pizza:
+        - {size: 600, timeout: 60}
+        - {size: 900, timeout: 120}
+        - {size: 1000, timeout: 120}
+        - {size: 3000, timeout: 240, enabled: false} # too large for server
+
+  ToshibaBraketSQBM:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 1.5
+      dt: 0.08721304684877396
+    models:
+      SK:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 60}
+        - {size: 300, timeout: 90}
+
+  ToshibaBraketSQBM_large:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 2.0
+      dt: 0.9171794056892395
+    models:
+      SK:
+        - {size: 1000, timeout: 180}
+        - {size: 3000, timeout: 240}
+        - {size: 10000, timeout: 480}
+
+  ToshibaBraketSQBM1.5b:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 2.0
+      dt: 0.5383201241493225
+    lagrange: 1.5
+    models:
+      BinPacking:
+        - {size: 3, timeout: 5, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 10, timeout: 15, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 30, timeout: 30, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 100, timeout: 60, item_weight: [1, 5], max_bin_weight: 6}
+      TSP:
+        - {size: 3, timeout: 5}
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 45}
+        - {size: 300, timeout: 180}
+        - {size: 1000, timeout: 300, enabled: false} # over 500k variables
+
+  ToshibaBraketSQBM_FS:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 2.0
+      dt: 0.0413915254175663
+    models:
+      FeatureSelection:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 5}
+        - {size: 100, timeout: 20}
+
+  ToshibaBraketSQBM_FS_large:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "ising"
+      loops: 0
+      algo: 2.0
+      dt: 0.24919696152210236
+    models:
+      FeatureSelection:
+        - {size: 300, timeout: 30}
+        - {size: 1000, timeout: 60}
+        - {size: 3000, timeout: 90}
+        - {size: 10000, timeout: 300}
+
+  ########################################################################################
+  # Toshiba 2
+
+  Toshiba2BraketSQBM1.5_binpacking:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "qubo"
+      loops: 0
+    lagrange: 1.5
+    models:
+      BinPacking:
+        - {size: 3, timeout: 5, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 10, timeout: 15, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 30, timeout: 30, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 100, timeout: 60, item_weight: [1, 5], max_bin_weight: 6}
+        - {size: 300, timeout: 300, item_weight: [1, 5], max_bin_weight: 6}
+
+  Toshiba2BraketSQBM1.5_feature:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "qubo"
+      loops: 0
+    lagrange: 1.5
+    models:
+      FeatureSelection:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 5}
+        - {size: 100, timeout: 20}
+        - {size: 300, timeout: 30}
+        - {size: 1000, timeout: 60}
+        - {size: 3000, timeout: 90}
+        - {size: 10000, timeout: 300}
+
+  Toshiba2BraketSQBM1_pizza:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "qubo"
+      loops: 0
+    lagrange: 1
+    models:
+      Pizza:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 10}
+        - {size: 100, timeout: 15}
+        - {size: 300, timeout: 30}
+        - {size: 600, timeout: 60}
+        - {size: 900, timeout: 120}
+        - {size: 1000, timeout: 120}
+        - {size: 3000, timeout: 240, enabled: false} # too large for server
+        - {size: 10000, timeout: 360, enabled: false} # too large for server
+        - {size: 30000, timeout: 480, enabled: false} # too large for server
+
+  Toshiba2BraketSQBM_sk:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "qubo"
+      loops: 0
+    models:
+      SK:
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 60}
+        - {size: 300, timeout: 90}
+        - {size: 1000, timeout: 180}
+        - {size: 3000, timeout: 240}
+        - {size: 10000, timeout: 480}
+
+  Toshiba2BraketSQBM1_tsp:
+    class: ToshibaBraketSQBM
+    aws_profile: aws_profile # insert your own profile here
+    url: https://sqbmplus-nbd.net # insert your own url here
+    token: "00000000000000000000000000000000" # insert your own token here
+    solver:
+      type: "qubo"
+      loops: 0
+    lagrange: 1.7
+    models:
+      TSP:
+        - {size: 3, timeout: 5}
+        - {size: 10, timeout: 5}
+        - {size: 30, timeout: 15}
+        - {size: 100, timeout: 45}
+        - {size: 300, timeout: 180, enabled: false} # oom allocating (90000, 90000) interaction table
+        - {size: 1000, timeout: 600, enabled: false} # over 500k variables
+
+  ########################################################################################
+  # Gurobi
+
+  Gurobi:
+    token: 00000000-0000-0000-0000-000000000000 # insert your own token here

@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional, Union, cast
 import numpy as np
 
-from qiskit_optimization import QuadraticProgram # type: ignore
+from qiskit_optimization import QuadraticProgram  # type: ignore
 
 from models.model import ModelStep
 from models.qubo import ToQuboCallback
@@ -20,8 +20,9 @@ class Platform(ABC):
 
     @property
     def logger(self) -> BenchmarkLogger:
+        """:returns the logger for this platform"""
         return self._logger
-    
+
     @logger.setter
     def logger(self, logger: BenchmarkLogger) -> None:
         self._logger = logger
@@ -34,15 +35,15 @@ class Platform(ABC):
         """
         self._lagrange = config.get("lagrange", None)
 
-    def construct_qubo(self, model: ModelStep, cb: ToQuboCallback) -> None:
+    def construct_qubo(self, model: ModelStep, callback: ToQuboCallback) -> None:
         """
         Turn the model into a QUBO using the configured lagrange parameter.
         The default implementation simply delegates to `model.to_qubo`.
 
         :param model: the `ModelStep` whose model needs to be converted into a QUBO
-        :param cb: the `ToQuboCallback` used to construct the QUBO
+        :param callback: the `ToQuboCallback` used to construct the QUBO
         """
-        model.to_qubo(cb, lagrange=self._lagrange)
+        model.to_qubo(callback, lagrange=self._lagrange)
 
     def translate_problem(self, step: ModelStep) -> Any:
         """
@@ -80,7 +81,7 @@ class Platform(ABC):
         """
         raise NotImplementedError
 
-    def get_info(self, result: Any) -> Optional[str]:
+    def get_info(self, result: Any) -> Optional[str]:  # pylint: disable=W0613
         """
         Return any additional information about the result that should be logged. The default
         implementation returns `None`.
@@ -90,7 +91,7 @@ class Platform(ABC):
         """
         return None
 
-    def get_solver_time(self, result: Any) -> Optional[float]:
+    def get_solver_time(self, result: Any) -> Optional[float]:  # pylint: disable=W0613
         """
         Find the actual solver time used in seconds. The default implementation returns
         `None` to indicate that this stat isn't available for the platform.
@@ -100,7 +101,7 @@ class Platform(ABC):
         """
         return None
 
-    def get_cost(self, result: Any) -> Optional[float]:
+    def get_cost(self, result: Any) -> Optional[float]:  # pylint: disable=W0613
         """
         Finds the monetary cost of the job. The default implementation returns `None` to
         indicate that this stat isn't available for the platform.
@@ -112,8 +113,8 @@ class Platform(ABC):
 
     def translate_result(
         self,
-        step: ModelStep,
-        qubo: QuadraticProgram,
+        step: ModelStep,  # pylint: disable=W0613
+        qubo: QuadraticProgram,  # pylint: disable=W0613
         result: Any,
         num_solutions_desired: int,
     ) -> Union[list, np.ndarray]:

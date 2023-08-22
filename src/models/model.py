@@ -4,7 +4,7 @@ Copyright (c) 2023 Objectivity Ltd.
 
 from abc import ABC, abstractmethod
 import logging
-from typing import Any, Callable, Optional
+from typing import Callable, Optional, cast
 from numpy import ndarray
 
 from qiskit_optimization import QuadraticProgram  # type: ignore
@@ -25,20 +25,29 @@ class ModelStep(ABC):
 
     @property
     def program(self) -> QuadraticProgram:
+        """:returns the `QuadraticProgram`"""
         return self._program
 
     @program.setter
     def program(self, program: QuadraticProgram) -> None:
+        """:param program: the `QuadraticProgram`"""
         self._program = program
 
     @property
     def num_solutions_desired(self) -> int:
+        """:returns the number of solutions desired from the solver"""
         return self._num_results_desired
+
+    @property
+    def converter(self) -> QuadraticProgramConverter:
+        """:returns the `QuadraticProgramConverter`"""
+        return cast(QuadraticProgramConverter, self._converter)
 
     @abstractmethod
     def __init__(self) -> None:
         self.program = None
         self._num_results_desired = 1
+        self._converter: Optional[QuadraticProgramConverter] = None
 
     def is_qubo(self) -> bool:
         """
@@ -53,38 +62,44 @@ class ModelStep(ABC):
             )
 
         def is_binary():
-            for v in self.program.variables:
-                if v.vartype != VarType.BINARY:
+            for variable in self.program.variables:
+                if variable.vartype != VarType.BINARY:
                     return False
             return True
 
         return is_unconstrained() and is_binary()
 
-    def to_qubo(self, cb: ToQuboCallback, lagrange: Optional[float] = None) -> None:
+    def to_qubo(
+        self, callback: ToQuboCallback, lagrange: Optional[float] = None
+    ) -> None:
         """
         Translates the step to a QUBO with a given (optional) Lagrange parameter for the
         constraints. This can be used by platforms which only support QUBOs.
 
-        :param cb: the `ToQuboCallback` used to construct the QUBO formulation
+        :param callback: the `ToQuboCallback` used to construct the QUBO formulation
         :param lagrange: the Lagrange parameter used for constraints. Defaults to 1
         """
 
         def create_converter() -> QuadraticProgramConverter:
             if self.is_qubo():
                 logging.info(
-                    f"Step with {len(self.program.variables)} variables is already a QUBO"
+                    "Step with %d variables is already a QUBO",
+                    len(self.program.variables),
                 )
                 return QuadraticProgramIdentityConverter(self.program)
             else:
                 logging.info(
-                    f"Converting step with {len(self.program.variables)} variables to QUBO"
+                    "Converting step with %d variables to QUBO",
+                    len(self.program.variables),
                 )
                 return QuadraticProgramToQuboConverter(self.program, lagrange)
 
-        self.converter = create_converter()
-        self.converter.convert(cb)
+        self._converter = create_converter()
+        self.converter.convert(callback)
 
-    def from_qubo(self, result: list, lagrange: Optional[float] = None) -> ndarray:
+    def from_qubo(
+        self, result: list, lagrange: Optional[float] = None  # pylint: disable=W0613
+    ) -> ndarray:
         """
         Translates the result of the step provided by to_qubo back to the original program.
         This can be used by platforms which only support QUBOs.
@@ -126,7 +141,6 @@ class Model(ABC):
 
         :param config: the model section of the configuration file
         """
-        pass
 
     @abstractmethod
     def execute(self, step_callback: Callable[[ModelStep], list]) -> list:
